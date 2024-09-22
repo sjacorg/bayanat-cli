@@ -18,4 +18,4 @@ dependencies = [
 Home = "https://bayanat.org"
 
 [project.scripts]
-bayanat = "bayanat_cli.main:main"
+bayanat = "bayanat_cli.main:app"
