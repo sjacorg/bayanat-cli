@@ -11,6 +11,9 @@ import typer
 from rich.console import Console
 from rich.progress import Progress
 
+# Centralized repository URL
+BAYANAT_REPO_URL = "https://github.com/sjacorg/bayanat.git"
+
 app = typer.Typer()
 console = Console()
 
@@ -157,7 +160,6 @@ def main(ctx: typer.Context):
 @app.command()
 def update(
     app_dir: str = typer.Option(".", help="Path to the Bayanat application directory"),
-    repo_url: str = typer.Option("https://github.com/your-repo/bayanat.git", help="URL of the Bayanat repository"),
     skip_git: bool = typer.Option(False, help="Skip Git operations"),
     skip_deps: bool = typer.Option(False, help="Skip dependency installation"),
     skip_migrations: bool = typer.Option(False, help="Skip database migrations"),
@@ -183,7 +185,7 @@ def update(
             progress.update(task, advance=10)
 
             if not skip_git:
-                fetch_latest_code(app_dir, repo_url, force)
+                fetch_latest_code(app_dir, BAYANAT_REPO_URL, force)
             progress.update(task, advance=20)
 
             if not skip_deps:
@@ -201,6 +203,55 @@ def update(
         console.print("[bold green]Update completed successfully![/]")
     except Exception as e:
         console.print(f"[bold red]Error during update:[/] {str(e)}")
+        rollback_update(app_dir)
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def install(
+    app_dir: str = typer.Argument(..., help="Directory where Bayanat will be installed"),
+    force: bool = typer.Option(False, help="Force installation, even if the directory is not empty")
+):
+    """
+    Install the Bayanat application in the specified directory.
+    """
+    try:
+        # Step 1: Verify or create the installation directory
+        if os.path.exists(app_dir):
+            if os.listdir(app_dir) and not force:
+                console.print(f"[bold red]Error:[/] Directory '{app_dir}' is not empty. Use --force to override.")
+                raise typer.Exit(code=1)
+        else:
+            console.print(f"[yellow]Creating directory '{app_dir}'...[/]")
+            os.makedirs(app_dir)
+
+        # Step 2: Clone the repository into the directory
+        console.print("[yellow]Cloning the Bayanat repository...[/]")
+        fetch_latest_code(app_dir, BAYANAT_REPO_URL, force=True)
+
+        # Step 3: Create a virtual environment
+        console.print("[yellow]Setting up the virtual environment...[/]")
+        env_dir = os.path.join(app_dir, "env")
+        if not os.path.exists(env_dir):
+            venv.create(env_dir, with_pip=True)
+
+        # Step 4: Install dependencies
+        console.print("[yellow]Installing dependencies...[/]")
+        install_dependencies(app_dir)
+
+        # Step 5: Set up additional directories and files (optional)
+        console.print("[yellow]Setting up additional directories...[/]")
+        os.makedirs(os.path.join(app_dir, "themes"), exist_ok=True)
+        os.makedirs(os.path.join(app_dir, "content"), exist_ok=True)
+
+        # Step 6: Apply initial migrations (optional)
+        console.print("[yellow]Applying initial database migrations...[/]")
+        apply_migrations(app_dir)
+
+        # Step 7: Finalize installation
+        console.print("[bold green]Bayanat installation completed successfully![/]")
+    except Exception as e:
+        console.print(f"[bold red]Error during installation:[/] {str(e)}")
         rollback_update(app_dir)
         raise typer.Exit(code=1)
 
