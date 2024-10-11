@@ -239,16 +239,11 @@ def install(
         console.print("[yellow]Installing dependencies...[/]")
         install_dependencies(app_dir)
 
-        # Step 5: Set up additional directories and files (optional)
-        console.print("[yellow]Setting up additional directories...[/]")
-        os.makedirs(os.path.join(app_dir, "themes"), exist_ok=True)
-        os.makedirs(os.path.join(app_dir, "content"), exist_ok=True)
-
-        # Step 6: Apply initial migrations (optional)
+        # Step 5: Apply initial migrations (optional)
         console.print("[yellow]Applying initial database migrations...[/]")
         apply_migrations(app_dir)
 
-        # Step 7: Finalize installation
+        # Step 6: Finalize installation
         console.print("[bold green]Bayanat installation completed successfully![/]")
     except Exception as e:
         console.print(f"[bold red]Error during installation:[/] {str(e)}")
