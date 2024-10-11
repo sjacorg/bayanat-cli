@@ -6,6 +6,7 @@ import sys
 import time
 import venv
 from typing import List, Optional
+import requests
 
 import typer
 from rich.console import Console
@@ -207,6 +208,30 @@ def update(
         raise typer.Exit(code=1)
 
 
+def check_virtualenv_support():
+    """Ensure that the venv module is available for creating virtual environments."""
+    try:
+        import venv
+    except ImportError:
+        console.print("[bold red]Error:[/] Python's venv module is not available.")
+        raise typer.Exit(code=1)
+
+def check_permissions(directory: str):
+    """Check if the current user has read/write permissions for the directory."""
+    if not os.access(directory, os.R_OK | os.W_OK):
+        console.print(f"[bold red]Error:[/] Insufficient permissions for directory '{directory}'.")
+        raise typer.Exit(code=1)
+
+def check_network_connectivity(url: str):
+    """Check if the network is accessible and the URL is reachable."""
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code != 200:
+            raise Exception("Failed to reach the repository")
+    except requests.RequestException:
+        console.print("[bold red]Error:[/] Network connectivity issue. Cannot reach the repository.")
+        raise typer.Exit(code=1)
+
 @app.command()
 def install(
     app_dir: str = typer.Argument(..., help="Directory where Bayanat will be installed"),
@@ -216,34 +241,43 @@ def install(
     Install the Bayanat application in the specified directory.
     """
     try:
-        # Step 1: Verify or create the installation directory
+        # Step 1: Check system requirements and network connectivity
+        console.print("[yellow]Checking system requirements...[/]")
+        check_system_requirements()  # Checks Python version and Git installation
+        check_virtualenv_support()    # Checks for venv availability
+        check_network_connectivity(BAYANAT_REPO_URL)  # Checks access to the repository
+
+        # Step 2: Verify the installation directory and permissions
+        console.print("[yellow]Verifying installation directory...[/]")
         if os.path.exists(app_dir):
+            check_permissions(app_dir)
             if os.listdir(app_dir) and not force:
                 console.print(f"[bold red]Error:[/] Directory '{app_dir}' is not empty. Use --force to override.")
                 raise typer.Exit(code=1)
         else:
             console.print(f"[yellow]Creating directory '{app_dir}'...[/]")
             os.makedirs(app_dir)
+            check_permissions(app_dir)
 
-        # Step 2: Clone the repository into the directory
+        # Step 3: Clone the repository into the directory
         console.print("[yellow]Cloning the Bayanat repository...[/]")
         fetch_latest_code(app_dir, BAYANAT_REPO_URL, force=True)
 
-        # Step 3: Create a virtual environment
+        # Step 4: Create a virtual environment
         console.print("[yellow]Setting up the virtual environment...[/]")
         env_dir = os.path.join(app_dir, "env")
         if not os.path.exists(env_dir):
             venv.create(env_dir, with_pip=True)
 
-        # Step 4: Install dependencies
+        # Step 5: Install dependencies
         console.print("[yellow]Installing dependencies...[/]")
         install_dependencies(app_dir)
 
-        # Step 5: Apply initial migrations (optional)
+        # Step 6: Apply initial migrations (optional)
         console.print("[yellow]Applying initial database migrations...[/]")
         apply_migrations(app_dir)
 
-        # Step 6: Finalize installation
+        # Step 7: Finalize installation
         console.print("[bold green]Bayanat installation completed successfully![/]")
     except Exception as e:
         console.print(f"[bold red]Error during installation:[/] {str(e)}")
