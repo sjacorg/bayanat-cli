@@ -11,6 +11,8 @@ import requests
 import typer
 from rich.console import Console
 from rich.progress import Progress
+from rich.panel import Panel
+from .utils.version import get_bayanat_version
 
 # Centralized repository URL
 BAYANAT_REPO_URL = "https://github.com/sjacorg/bayanat.git"
@@ -176,6 +178,10 @@ def update(
             console.print("[bold red]Error:[/] The specified directory does not appear to be a valid Bayanat application directory.")
             raise typer.Exit(code=1)
 
+        # Display current version
+        current_version = get_bayanat_version(app_dir)
+        display_version(current_version, "Current Bayanat version")
+
         with Progress() as progress:
             task = progress.add_task("[green]Updating Bayanat...", total=100)
 
@@ -200,6 +206,10 @@ def update(
             if not skip_restart:
                 restart_services(app_dir)
             progress.update(task, advance=20)
+
+        # Display updated version
+        new_version = get_bayanat_version(app_dir)
+        display_version(new_version, "Updated Bayanat version")
 
         console.print("[bold green]Update completed successfully![/]")
     except Exception as e:
@@ -231,6 +241,10 @@ def check_network_connectivity(url: str):
     except requests.RequestException:
         console.print("[bold red]Error:[/] Network connectivity issue. Cannot reach the repository.")
         raise typer.Exit(code=1)
+
+def display_version(version: str, message: str):
+    """Display version information in a formatted panel."""
+    console.print(Panel(f"{message}: [bold blue]{version}[/]", expand=False))
 
 @app.command()
 def install(
