@@ -152,13 +152,15 @@ def validate_bayanat_directory(app_dir: str) -> bool:
 
     return True
 
-@app.callback()
+@app.callback(invoke_without_command=True)
 def main(ctx: typer.Context):
     """
     Bayanat CLI tool.
     """
     if ctx.invoked_subcommand is None:
-        console.print("[bold red]Please specify a command. Use --help for more information.[/]")
+        console.print("[bold red]Missing command.[/]")
+        console.print("Use [bold blue]bayanat --help[/] to see available commands.")
+        raise typer.Exit(code=1)
 
 @app.command()
 def update(
