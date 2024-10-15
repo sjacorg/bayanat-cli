@@ -164,7 +164,7 @@ def main(ctx: typer.Context):
 
 @app.command()
 def update(
-    app_dir: str = typer.Option(".", help="Path to the Bayanat application directory"),
+    path: str = typer.Argument(".", help="Path to the Bayanat application directory"),
     skip_git: bool = typer.Option(False, help="Skip Git operations"),
     skip_deps: bool = typer.Option(False, help="Skip dependency installation"),
     skip_migrations: bool = typer.Option(False, help="Skip database migrations"),
@@ -176,12 +176,12 @@ def update(
     """
     try:
         # Validate the Bayanat directory before proceeding
-        if not validate_bayanat_directory(app_dir):
+        if not validate_bayanat_directory(path):
             console.print("[bold red]Error:[/] The specified directory does not appear to be a valid Bayanat application directory.")
             raise typer.Exit(code=1)
 
         # Display current version
-        current_version = get_bayanat_version(app_dir)
+        current_version = get_bayanat_version(path)
         display_version(current_version, "Current Bayanat version")
 
         with Progress() as progress:
@@ -190,33 +190,33 @@ def update(
             check_system_requirements()
             progress.update(task, advance=10)
 
-            backup_database(app_dir)
+            backup_database(path)
             progress.update(task, advance=10)
 
             if not skip_git:
-                fetch_latest_code(app_dir, BAYANAT_REPO_URL, force)
+                fetch_latest_code(path, BAYANAT_REPO_URL, force)
             progress.update(task, advance=20)
 
             if not skip_deps:
-                install_dependencies(app_dir)
+                install_dependencies(path)
             progress.update(task, advance=20)
 
             if not skip_migrations:
-                apply_migrations(app_dir)
+                apply_migrations(path)
             progress.update(task, advance=20)
 
             if not skip_restart:
-                restart_services(app_dir)
+                restart_services(path)
             progress.update(task, advance=20)
 
         # Display updated version
-        new_version = get_bayanat_version(app_dir)
+        new_version = get_bayanat_version(path)
         display_version(new_version, "Updated Bayanat version")
 
         console.print("[bold green]Update completed successfully![/]")
     except Exception as e:
         console.print(f"[bold red]Error during update:[/] {str(e)}")
-        rollback_update(app_dir)
+        rollback_update(path)
         raise typer.Exit(code=1)
 
 
@@ -302,13 +302,13 @@ def install(
 
 
 @app.command()
-def version(app_dir: str = typer.Option(".", help="Path to the Bayanat application directory")):
+def version(path: str = typer.Argument(".", help="Path to the Bayanat application directory")):
     """
     Display the current version of the Bayanat application.
     """
     try:
         # Retrieve the current version
-        current_version = get_bayanat_version(app_dir)
+        current_version = get_bayanat_version(path)
         # Display the version using a formatted panel
         display_version(current_version, "Bayanat Version")
     except Exception as e:
