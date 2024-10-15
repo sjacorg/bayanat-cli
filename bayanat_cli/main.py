@@ -197,6 +197,12 @@ def update(
                 fetch_latest_code(path, BAYANAT_REPO_URL, force)
             progress.update(task, advance=20)
 
+            # Check if the version is already up-to-date
+            new_version = get_bayanat_version(path)
+            if current_version == new_version:
+                console.print("[bold green]Bayanat is already up-to-date![/]")
+                return
+
             if not skip_deps:
                 install_dependencies(path)
             progress.update(task, advance=20)
@@ -210,7 +216,6 @@ def update(
             progress.update(task, advance=20)
 
         # Display updated version
-        new_version = get_bayanat_version(path)
         display_version(new_version, "Updated Bayanat version")
 
         console.print("[bold green]Update completed successfully![/]")
