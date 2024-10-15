@@ -299,5 +299,19 @@ def install(
         raise typer.Exit(code=1)
 
 
+@app.command()
+def version(app_dir: str = typer.Option(".", help="Path to the Bayanat application directory")):
+    """
+    Display the current version of the Bayanat application.
+    """
+    try:
+        # Retrieve the current version
+        current_version = get_bayanat_version(app_dir)
+        # Display the version using a formatted panel
+        display_version(current_version, "Bayanat Version")
+    except Exception as e:
+        console.print(f"[bold red]Error retrieving version:[/] {str(e)}")
+        raise typer.Exit(code=1)
+
 if __name__ == "__main__":
     app()
