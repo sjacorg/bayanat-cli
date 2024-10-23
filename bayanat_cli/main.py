@@ -342,6 +342,70 @@ def version(path: str = typer.Argument(".", help="Path to the Bayanat applicatio
         console.print(f"[bold red]Error retrieving version:[/] {str(e)}")
         raise typer.Exit(code=1)
 
+def get_venv_python(app_dir: str) -> str:
+    """
+    Get the Python interpreter path from the virtualenv.
+    Reads the venv path from pyproject.toml if available, otherwise uses default 'env'.
+    """
+    try:
+        import tomli
+        with open(os.path.join(app_dir, "pyproject.toml"), "rb") as f:
+            config = tomli.load(f)
+            venv_path = config.get("tool", {}).get("bayanat", {}).get("venv_path", "env")
+    except (ImportError, FileNotFoundError, KeyError):
+        venv_path = "env"
+    
+    python_path = os.path.join(app_dir, venv_path, "bin", "python")
+    
+    if not os.path.exists(python_path):
+        raise FileNotFoundError(f"Virtual environment Python interpreter not found at {python_path}")
+    
+    return python_path
+
+def run_migration_command(app_dir: str, command: str, env: dict = None) -> Tuple[bool, str]:
+    """
+    Run a Flask migration command in the virtual environment.
+    
+    Args:
+        app_dir: The application directory
+        command: The Flask command to run
+        env: Additional environment variables
+    
+    Returns:
+        Tuple of (success: bool, message: str)
+    """
+    try:
+        python_path = get_venv_python(app_dir)
+        
+        # Prepare the environment
+        cmd_env = os.environ.copy()
+        if env:
+            cmd_env.update(env)
+        
+        # Ensure FLASK_APP is set
+        cmd_env['FLASK_APP'] = 'run.py'
+        
+        # Run the Flask command
+        result = subprocess.run(
+            [python_path, "-m", "flask", command],
+            cwd=app_dir,
+            env=cmd_env,
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode == 0:
+            return True, result.stdout
+        else:
+            error_msg = result.stderr or result.stdout
+            return False, f"Migration command failed: {error_msg}"
+            
+    except FileNotFoundError as e:
+        return False, f"Environment error: {str(e)}"
+    except subprocess.CalledProcessError as e:
+        return False, f"Command execution failed: {e.stderr or e.stdout}"
+    except Exception as e:
+        return False, f"Unexpected error: {str(e)}"
 
 if __name__ == "__main__":
     app()
