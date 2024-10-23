@@ -5,7 +5,7 @@ import subprocess
 import sys
 import time
 import venv
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import requests
 
 import typer
@@ -108,11 +108,33 @@ def install_dependencies(app_dir: str):
         raise typer.Exit(code=1)
 
 
-def apply_migrations(app_dir: str):
-    """Apply database migrations."""
-    console.print("[yellow]Applying database migrations...[/]")
-    # Placeholder for migration logic
-    pass
+def apply_migrations(app_dir: str) -> Tuple[bool, str]:
+    """
+    Apply database migrations via Bayanat CLI command.
+    
+    Args:
+        app_dir: The application directory
+    
+    Returns:
+        Tuple of (success: bool, message: str)
+    """
+    # First check for pending migrations
+    success, output = run_migration_command(app_dir, "apply-migrations --dry-run")
+    if not success:
+        return False, output
+    
+    if "No pending migrations to apply" in output:
+        return True, "No pending migrations to apply."
+    
+    # Apply the migrations
+    success, output = run_migration_command(app_dir, "apply-migrations")
+    if not success:
+        return False, output
+    
+    if "[Success]" in output:
+        return True, "Migrations applied successfully."
+    else:
+        return False, f"Migration process failed: {output}"
 
 
 def restart_services(app_dir: str):
@@ -319,6 +341,7 @@ def version(path: str = typer.Argument(".", help="Path to the Bayanat applicatio
     except Exception as e:
         console.print(f"[bold red]Error retrieving version:[/] {str(e)}")
         raise typer.Exit(code=1)
+
 
 if __name__ == "__main__":
     app()
