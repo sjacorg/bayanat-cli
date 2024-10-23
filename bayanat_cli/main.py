@@ -21,6 +21,14 @@ app = typer.Typer()
 console = Console()
 
 
+def pprint(message: str, style: Optional[str] = None):
+    """Prints a message with newlines before and after."""
+    if style:
+        console.print(f"\n{message}", style=style)
+    else:
+        console.print(f"\n{message}")
+
+
 def run_command(command: List[str], cwd: Optional[str] = None) -> str:
     """
     Runs a shell command and returns the output.
@@ -36,8 +44,8 @@ def run_command(command: List[str], cwd: Optional[str] = None) -> str:
         )
         return result.stdout
     except subprocess.CalledProcessError as e:
-        console.print(f"[bold red]Error running command:[/] {' '.join(command)}")
-        console.print(e.stderr)
+        pprint(f"Error running command: {' '.join(command)}", "bold red")
+        pprint(e.stderr)
         raise typer.Exit(code=1)
 
 
@@ -45,21 +53,21 @@ def check_system_requirements():
     """Check if the system meets the minimum requirements."""
     # Check Python version
     if sys.version_info < (3, 8):
-        console.print("[bold red]Python 3.8 or higher is required.[/]")
+        pprint("Python 3.8 or higher is required.", "bold red")
         raise typer.Exit(code=1)
     
     # Check if Git is installed
     try:
         run_command(["git", "--version"])
     except subprocess.CalledProcessError:
-        console.print("[bold red]Git is not installed. Please install Git to proceed.[/]")
+        pprint("Git is not installed. Please install Git to proceed.", "bold red")
         raise typer.Exit(code=1)
 
 
 def backup_database(app_dir: str):
     """Create a backup of the database before updating."""
     # Implement database backup logic
-    console.print("[yellow]Backing up the database...[/]")
+    pprint("Backing up the database...", "yellow")
     # Placeholder for backup logic
     pass
 
@@ -67,7 +75,7 @@ def backup_database(app_dir: str):
 def rollback_update(app_dir: str):
     """Rollback the update if something goes wrong."""
     # Implement rollback logic (restore from backup, revert code, etc.)
-    console.print("[yellow]Rolling back the update...[/]")
+    pprint("Rolling back the update...", "yellow")
     # Placeholder for rollback logic
     pass
 
@@ -75,10 +83,10 @@ def rollback_update(app_dir: str):
 def fetch_latest_code(app_dir: str, repo_url: str, force: bool):
     """Fetch the latest code from the repository."""
     if not os.path.isdir(os.path.join(app_dir, ".git")):
-        console.print("[yellow]Cloning repository...[/]")
+        pprint("Cloning repository...", "yellow")
         run_command(["git", "clone", repo_url, app_dir])
     else:
-        console.print("[yellow]Fetching latest code...[/]")
+        pprint("Fetching latest code...", "yellow")
         run_command(["git", "fetch"], cwd=app_dir)
         run_command(["git", "checkout", "master"], cwd=app_dir)
         if force:
@@ -88,23 +96,23 @@ def fetch_latest_code(app_dir: str, repo_url: str, force: bool):
 
 def install_dependencies(app_dir: str):
     """Install the required dependencies."""
-    console.print("[yellow]Installing dependencies...[/]")
+    pprint("Installing dependencies...", "yellow")
     env_dir = os.path.join(app_dir, "env")
     
     if not os.path.isdir(env_dir):
-        console.print("[yellow]Creating virtual environment using virtualenv...[/]")
+        pprint("Creating virtual environment using virtualenv...", "yellow")
         run_command(["virtualenv", env_dir], cwd=app_dir)
     
     pip_path = os.path.join(env_dir, "bin", "pip")
     
     try:
-        console.print("[yellow]Upgrading pip...[/]")
+        pprint("Upgrading pip...", "yellow")
         run_command([pip_path, "install", "--upgrade", "pip"], cwd=app_dir)
-        console.print("[yellow]Installing packages from requirements.txt...[/]")
+        pprint("Installing packages from requirements.txt...", "yellow")
         run_command([pip_path, "install", "-r", os.path.join(app_dir, "requirements.txt")], cwd=app_dir)
-        console.print("[green]Dependencies installed successfully.[/]")
+        pprint("Dependencies installed successfully.", "green")
     except subprocess.CalledProcessError as e:
-        console.print(f"[bold red]Failed to install dependencies:[/] {e.stderr}")
+        pprint(f"Failed to install dependencies: {e.stderr}", "bold red")
         raise typer.Exit(code=1)
 
 
@@ -120,26 +128,31 @@ def apply_migrations(app_dir: str) -> Tuple[bool, str]:
     """
     # First check for pending migrations
     success, output = run_migration_command(app_dir, "apply-migrations --dry-run")
+    pprint(output)  # Print the dry-run output
     if not success:
         return False, output
     
     if "No pending migrations to apply" in output:
+        pprint("No pending migrations to apply.", "bold green")
         return True, "No pending migrations to apply."
     
     # Apply the migrations
     success, output = run_migration_command(app_dir, "apply-migrations")
+    pprint(output)  # Print the migration output
     if not success:
         return False, output
     
     if "[Success]" in output:
+        pprint("Migrations applied successfully.", "bold green")
         return True, "Migrations applied successfully."
     else:
+        pprint(f"Migration process failed: {output}", "bold red")
         return False, f"Migration process failed: {output}"
 
 
 def restart_services(app_dir: str):
     """Restart the application services."""
-    console.print("[yellow]Restarting services...[/]")
+    pprint("Restarting services...", "yellow")
     # Placeholder for service restart logic
     pass
 
@@ -164,12 +177,12 @@ def validate_bayanat_directory(app_dir: str) -> bool:
 
     for file in required_files:
         if not os.path.isfile(os.path.join(app_dir, file)):
-            console.print(f"[bold red]Error:[/] Required file '{file}' not found in {app_dir}")
+            pprint(f"Error: Required file '{file}' not found in {app_dir}", "bold red")
             return False
 
     for directory in required_dirs:
         if not os.path.isdir(os.path.join(app_dir, directory)):
-            console.print(f"[bold red]Error:[/] Required directory '{directory}' not found in {app_dir}")
+            pprint(f"Error: Required directory '{directory}' not found in {app_dir}", "bold red")
             return False
 
     return True
@@ -180,8 +193,8 @@ def main(ctx: typer.Context):
     Bayanat CLI tool.
     """
     if ctx.invoked_subcommand is None:
-        console.print("[bold red]Missing command.[/]")
-        console.print("Use [bold blue]bayanat --help[/] to see available commands.")
+        pprint("[bold red]Missing command.[/]")
+        pprint("Use [bold blue]bayanat --help[/] to see available commands.")
         raise typer.Exit(code=1)
 
 @app.command()
@@ -199,15 +212,16 @@ def update(
     try:
         # Validate the Bayanat directory before proceeding
         if not validate_bayanat_directory(path):
-            console.print("[bold red]Error:[/] The specified directory does not appear to be a valid Bayanat application directory.")
+            pprint("Error: The specified directory does not appear to be a valid Bayanat application directory.", "bold red")
             raise typer.Exit(code=1)
 
         # Display current version
         current_version = get_bayanat_version(path)
+        pprint(f"Current Bayanat version: {current_version}", "bold blue")
         display_version(current_version, "Current Bayanat version")
 
         with Progress() as progress:
-            task = progress.add_task("[green]Updating Bayanat...", total=100)
+            task = progress.add_task("\n[green]Updating Bayanat...", total=100)
 
             check_system_requirements()
             progress.update(task, advance=10)
@@ -222,27 +236,31 @@ def update(
             # Check if the version is already up-to-date
             new_version = get_bayanat_version(path)
             if current_version == new_version:
-                console.print("[bold green]Bayanat is already up-to-date![/]")
-                return
+                pprint("Bayanat is already up-to-date!", "bold green")
+                # return
+                
 
             if not skip_deps:
+                pprint("Installing dependencies...", "yellow")
                 install_dependencies(path)
             progress.update(task, advance=20)
 
             if not skip_migrations:
+                pprint("Applying migrations...", "yellow")
                 apply_migrations(path)
             progress.update(task, advance=20)
 
             if not skip_restart:
+                pprint("Restarting services...", "yellow")
                 restart_services(path)
             progress.update(task, advance=20)
 
         # Display updated version
         display_version(new_version, "Updated Bayanat version")
 
-        console.print("[bold green]Update completed successfully![/]")
+        pprint("Update completed successfully!", "bold green")
     except Exception as e:
-        console.print(f"[bold red]Error during update:[/] {str(e)}")
+        pprint(f"Error during update: {str(e)}", "bold red")
         rollback_update(path)
         raise typer.Exit(code=1)
 
@@ -252,13 +270,13 @@ def check_virtualenv_support():
     try:
         import venv
     except ImportError:
-        console.print("[bold red]Error:[/] Python's venv module is not available.")
+        pprint("[bold red]Error:[/] Python's venv module is not available.")
         raise typer.Exit(code=1)
 
 def check_permissions(directory: str):
     """Check if the current user has read/write permissions for the directory."""
     if not os.access(directory, os.R_OK | os.W_OK):
-        console.print(f"[bold red]Error:[/] Insufficient permissions for directory '{directory}'.")
+        pprint(f"[bold red]Error:[/] Insufficient permissions for directory '{directory}'.")
         raise typer.Exit(code=1)
 
 def check_network_connectivity(url: str):
@@ -268,12 +286,13 @@ def check_network_connectivity(url: str):
         if response.status_code != 200:
             raise Exception("Failed to reach the repository")
     except requests.RequestException:
-        console.print("[bold red]Error:[/] Network connectivity issue. Cannot reach the repository.")
+        pprint("[bold red]Error:[/] Network connectivity issue. Cannot reach the repository.")
         raise typer.Exit(code=1)
 
 def display_version(version: str, message: str):
     """Display version information in a formatted panel."""
-    console.print(Panel(f"{message}: [bold blue]{version}[/]", expand=False))
+    panel = Panel(f"{message}: [bold blue]{version}[/]", expand=False)
+    console.print(panel)  # Use console.print to render the Panel
 
 @app.command()
 def install(
@@ -285,45 +304,45 @@ def install(
     """
     try:
         # Step 1: Check system requirements and network connectivity
-        console.print("[yellow]Checking system requirements...[/]")
+        pprint("Checking system requirements...", "yellow")
         check_system_requirements()  # Checks Python version and Git installation
         check_virtualenv_support()    # Checks for venv availability
         check_network_connectivity(BAYANAT_REPO_URL)  # Checks access to the repository
 
         # Step 2: Verify the installation directory and permissions
-        console.print("[yellow]Verifying installation directory...[/]")
+        pprint("Verifying installation directory...", "yellow")
         if os.path.exists(app_dir):
             check_permissions(app_dir)
             if os.listdir(app_dir) and not force:
-                console.print(f"[bold red]Error:[/] Directory '{app_dir}' is not empty. Use --force to override.")
+                pprint(f"[bold red]Error:[/] Directory '{app_dir}' is not empty. Use --force to override.")
                 raise typer.Exit(code=1)
         else:
-            console.print(f"[yellow]Creating directory '{app_dir}'...[/]")
+            pprint(f"[yellow]Creating directory '{app_dir}'...[/]")
             os.makedirs(app_dir)
             check_permissions(app_dir)
 
         # Step 3: Clone the repository into the directory
-        console.print("[yellow]Cloning the Bayanat repository...[/]")
+        pprint("Cloning the Bayanat repository...", "yellow")
         fetch_latest_code(app_dir, BAYANAT_REPO_URL, force=True)
 
         # Step 4: Create a virtual environment
-        console.print("[yellow]Setting up the virtual environment...[/]")
+        pprint("Setting up the virtual environment...", "yellow")
         env_dir = os.path.join(app_dir, "env")
         if not os.path.exists(env_dir):
             venv.create(env_dir, with_pip=True)
 
         # Step 5: Install dependencies
-        console.print("[yellow]Installing dependencies...[/]")
+        pprint("Installing dependencies...", "yellow")
         install_dependencies(app_dir)
 
         # Step 6: Apply initial migrations (optional)
-        console.print("[yellow]Applying initial database migrations...[/]")
+        pprint("Applying initial database migrations...", "yellow")
         apply_migrations(app_dir)
 
         # Step 7: Finalize installation
-        console.print("[bold green]Bayanat installation completed successfully![/]")
+        pprint("Bayanat installation completed successfully!", "bold green")
     except Exception as e:
-        console.print(f"[bold red]Error during installation:[/] {str(e)}")
+        pprint(f"Error during installation: {str(e)}", "bold red")
         rollback_update(app_dir)
         raise typer.Exit(code=1)
 
@@ -339,7 +358,7 @@ def version(path: str = typer.Argument(".", help="Path to the Bayanat applicatio
         # Display the version using a formatted panel
         display_version(current_version, "Bayanat Version")
     except Exception as e:
-        console.print(f"[bold red]Error retrieving version:[/] {str(e)}")
+        pprint(f"Error retrieving version: {str(e)}", "bold red")
         raise typer.Exit(code=1)
 
 def get_venv_python(app_dir: str) -> str:
@@ -365,14 +384,6 @@ def get_venv_python(app_dir: str) -> str:
 def run_migration_command(app_dir: str, command: str, env: dict = None) -> Tuple[bool, str]:
     """
     Run a Flask migration command in the virtual environment.
-    
-    Args:
-        app_dir: The application directory
-        command: The Flask command to run
-        env: Additional environment variables
-    
-    Returns:
-        Tuple of (success: bool, message: str)
     """
     try:
         python_path = get_venv_python(app_dir)
@@ -385,9 +396,9 @@ def run_migration_command(app_dir: str, command: str, env: dict = None) -> Tuple
         # Ensure FLASK_APP is set
         cmd_env['FLASK_APP'] = 'run.py'
         
-        # Run the Flask command
+        # Run the Flask command using the virtual environment's Python
         result = subprocess.run(
-            [python_path, "-m", "flask", command],
+            [python_path, "-m", "flask"] + command.split(),
             cwd=app_dir,
             env=cmd_env,
             capture_output=True,
@@ -409,3 +420,4 @@ def run_migration_command(app_dir: str, command: str, env: dict = None) -> Tuple
 
 if __name__ == "__main__":
     app()
+
