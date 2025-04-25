@@ -108,8 +108,19 @@ def install_dependencies(app_dir: str):
     try:
         pprint("Upgrading pip...", "yellow")
         run_command([pip_path, "install", "--upgrade", "pip"], cwd=app_dir)
-        pprint("Installing packages from requirements.txt...", "yellow")
-        run_command([pip_path, "install", "-r", os.path.join(app_dir, "requirements.txt")], cwd=app_dir)
+        
+        # Use the new requirements location 
+        requirements_path = os.path.join(app_dir, "requirements", "main.txt")
+        
+        pprint("Installing packages from requirements/main.txt...", "yellow")
+        run_command([pip_path, "install", "-r", requirements_path], cwd=app_dir)
+        
+        # Install development requirements if they exist
+        dev_requirements_path = os.path.join(app_dir, "requirements", "dev.txt")
+        if os.path.exists(dev_requirements_path):
+            pprint("Installing development packages...", "yellow")
+            run_command([pip_path, "install", "-r", dev_requirements_path], cwd=app_dir)
+            
         pprint("Dependencies installed successfully.", "green")
     except subprocess.CalledProcessError as e:
         pprint(f"Failed to install dependencies: {e.stderr}", "bold red")
@@ -163,7 +174,6 @@ def validate_bayanat_directory(app_dir: str) -> bool:
     """
     required_files = [
         'docker-compose.yml',
-        'requirements.txt',
         'pyproject.toml',
         'README.md',
         'run.py'
@@ -172,8 +182,14 @@ def validate_bayanat_directory(app_dir: str) -> bool:
         'flask',
         'nginx',
         'docs',
-        'tests'
+        'tests',
+        'requirements'  # Add requirements directory to required directories
     ]
+
+    # Check specifically for requirements/main.txt
+    if not os.path.isfile(os.path.join(app_dir, 'requirements', 'main.txt')):
+        pprint("Error: Required file 'requirements/main.txt' not found", "bold red")
+        return False
 
     for file in required_files:
         if not os.path.isfile(os.path.join(app_dir, file)):
