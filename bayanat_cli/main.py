@@ -225,6 +225,7 @@ def update(
     """
     Update the Bayanat application.
     """
+    lock_applied = False # Flag to track if lock was successful
     try:
         # Validate the Bayanat directory before proceeding
         if not validate_bayanat_directory(path):
@@ -235,6 +236,17 @@ def update(
         current_version = get_bayanat_version(path)
         pprint(f"Current Bayanat version: {current_version}", "bold blue")
         display_version(current_version, "Current Bayanat version")
+        
+        # --- Add Lock Step --- 
+        pprint("Attempting to lock the Bayanat application...", "yellow")
+        lock_success, lock_output = run_migration_command(path, "lock --reason \"Applying update via CLI...\"")
+        if not lock_success:
+            pprint(f"Error: Failed to lock the Bayanat application. Output:\n{lock_output}", "bold red")
+            raise typer.Exit(code=1)
+        else:
+            lock_applied = True
+            pprint("Application locked successfully.", "green")
+        # --- End Lock Step ---
 
         with Progress() as progress:
             task = progress.add_task("\n[green]Updating Bayanat...", total=100)
