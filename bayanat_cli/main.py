@@ -300,7 +300,18 @@ def update(
         pprint("Update completed successfully!", "bold green")
     except Exception as e:
         pprint(f"Error during update: {str(e)}", "bold red")
-        rollback_update(path)
+        
+        # --- Add Unlock Step (Error Path) --- 
+        if lock_applied:
+            pprint("Attempting to unlock application after error...", "yellow")
+            unlock_success, unlock_output = run_migration_command(path, "unlock")
+            if not unlock_success:
+                pprint(f"Warning: Failed to unlock application after error. Manual unlock may be required. Output:\n{unlock_output}", "bold yellow")
+            else:
+                pprint("Application unlocked.", "green")
+        # --- End Unlock Step ---
+        
+        rollback_update(path) # Placeholder for rollback
         raise typer.Exit(code=1)
 
 
