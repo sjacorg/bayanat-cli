@@ -283,6 +283,17 @@ def update(
                 restart_services(path)
             progress.update(task, advance=20)
 
+            # --- Add Unlock Step (Success Path) --- 
+            if lock_applied:
+                pprint("Unlocking the Bayanat application...", "yellow")
+                unlock_success, unlock_output = run_migration_command(path, "unlock")
+                if not unlock_success:
+                    # Log error but don't necessarily stop the whole process if unlocking fails
+                    pprint(f"Warning: Failed to unlock application. Output:\n{unlock_output}", "bold yellow")
+                else:
+                    pprint("Application unlocked successfully.", "green")
+            # --- End Unlock Step ---
+
         # Display updated version
         display_version(new_version, "Updated Bayanat version")
 
