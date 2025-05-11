@@ -571,8 +571,8 @@ def backup(
 
 @app.command()
 def restore(
-    path: str = typer.Argument(".", help="Path to the Bayanat application directory"),
-    backup_file: str = typer.Argument(..., help="Path to the backup file to restore")
+    backup_file: str = typer.Argument(..., help="Path to the backup file to restore"),
+    path: str = typer.Option(".", "--path", "-p", help="Path to the Bayanat application directory")
 ):
     """
     Restore a database from a backup file.
