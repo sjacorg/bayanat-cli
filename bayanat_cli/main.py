@@ -113,12 +113,36 @@ def backup_database(app_dir: str, output: Optional[str] = None) -> Optional[str]
     return None
 
 
-def rollback_update(app_dir: str):
-    """Rollback the update if something goes wrong."""
-    # Implement rollback logic (restore from backup, revert code, etc.)
+def rollback_update(app_dir: str, backup_file: Optional[str] = None):
+    """
+    Rollback the update if something goes wrong.
+    
+    Args:
+        app_dir: Path to the Bayanat application directory
+        backup_file: Optional path to the database backup file to restore
+    """
     pprint("Rolling back the update...", "yellow")
-    # Placeholder for rollback logic
-    pass
+    
+    # If we have a backup file, try to restore it
+    if backup_file and os.path.exists(backup_file):
+        pprint(f"Restoring database from backup: {backup_file}", "yellow")
+        success, output = run_flask_command(app_dir, f"restore-db {backup_file}")
+        
+        if success:
+            pprint("Database restored successfully.", "green")
+        else:
+            pprint(f"Failed to restore database: {output}", "bold red")
+    else:
+        pprint("No database backup file available for rollback.", "yellow")
+    
+    # Try to revert code to previous commit if Git is available
+    if os.path.isdir(os.path.join(app_dir, ".git")):
+        try:
+            pprint("Reverting code to previous state...", "yellow")
+            run_command(["git", "reset", "--hard", "HEAD@{1}"], cwd=app_dir)
+            pprint("Code reverted to previous state.", "green")
+        except Exception as e:
+            pprint(f"Failed to revert code: {str(e)}", "bold red")
 
 
 def fetch_latest_code(app_dir: str, repo_url: str, force: bool):
@@ -267,6 +291,7 @@ def update(
     Update the Bayanat application.
     """
     lock_applied = False # Flag to track if lock was successful
+    backup_path = None # Store backup path for potential rollback
     try:
         # Validate the Bayanat directory before proceeding
         if not validate_bayanat_directory(path):
@@ -295,7 +320,7 @@ def update(
             check_system_requirements()
             progress.update(task, advance=10)
 
-            backup_database(path)
+            backup_path = backup_database(path)
             progress.update(task, advance=10)
 
             if not skip_git:
@@ -352,7 +377,7 @@ def update(
                 pprint("Application unlocked.", "green")
         # --- End Unlock Step ---
         
-        rollback_update(path) # Placeholder for rollback
+        rollback_update(path, backup_path) # Pass backup_path to rollback
         raise typer.Exit(code=1)
 
 
@@ -542,6 +567,39 @@ def backup(
             
     except Exception as e:
         pprint(f"Error during backup: {str(e)}", "bold red")
+        raise typer.Exit(code=1)
+
+@app.command()
+def restore(
+    path: str = typer.Argument(".", help="Path to the Bayanat application directory"),
+    backup_file: str = typer.Argument(..., help="Path to the backup file to restore")
+):
+    """
+    Restore a database from a backup file.
+    """
+    try:
+        # Validate the Bayanat directory before proceeding
+        if not validate_bayanat_directory(path):
+            pprint("Error: The specified directory does not appear to be a valid Bayanat application directory.", "bold red")
+            raise typer.Exit(code=1)
+            
+        # Verify backup file exists
+        if not os.path.exists(backup_file):
+            pprint(f"Error: Backup file not found: {backup_file}", "bold red")
+            raise typer.Exit(code=1)
+            
+        # Try to restore
+        pprint(f"Restoring database from backup: {backup_file}", "yellow")
+        success, output = run_flask_command(path, f"restore-db {backup_file}")
+        
+        if success:
+            pprint("Database restored successfully.", "bold green")
+        else:
+            pprint(f"Failed to restore database: {output}", "bold red")
+            raise typer.Exit(code=1)
+            
+    except Exception as e:
+        pprint(f"Error during restore: {str(e)}", "bold red")
         raise typer.Exit(code=1)
 
 if __name__ == "__main__":
