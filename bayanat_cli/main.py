@@ -64,12 +64,53 @@ def check_system_requirements():
         raise typer.Exit(code=1)
 
 
-def backup_database(app_dir: str):
-    """Create a backup of the database before updating."""
-    # Implement database backup logic
+def backup_database(app_dir: str, output: Optional[str] = None) -> Optional[str]:
+    """
+    Create a backup of the database before updating.
+    
+    Args:
+        app_dir: Path to the Bayanat application directory
+        output: Optional custom output path for the backup file
+        
+    Returns:
+        Path to the backup file or None if backup failed
+    """
     pprint("Backing up the database...", "yellow")
-    # Placeholder for backup logic
-    pass
+    
+    # Generate expected backup path
+    if output:
+        # Use the provided output path
+        expected_backup_path = output
+        command = f"backup-db --output {expected_backup_path}"
+    else:
+        # Use a timestamp for predictable backup filename
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        expected_backup_dir = os.path.join(app_dir, "backups")
+        expected_backup_path = os.path.join(expected_backup_dir, f"{timestamp}_bayanat_backup.dump")
+        command = f"backup-db --output {expected_backup_path}"
+    
+    # Run the backup command with the expected path
+    success, output_text = run_flask_command(app_dir, command)
+    
+    if not success:
+        pprint(f"Database backup failed: {output_text}", "bold red")
+        return None
+    
+    # Verify the file exists
+    if os.path.exists(expected_backup_path):
+        pprint(f"Database backup created at: {expected_backup_path}", "green")
+        return expected_backup_path
+    
+    # Fallback to parsing output if our expected file doesn't exist
+    for line in output_text.splitlines():
+        if "Database backup created successfully at" in line:
+            backup_path = line.split("at")[-1].strip()
+            if os.path.exists(backup_path):
+                pprint(f"Database backup created at: {backup_path}", "green")
+                return backup_path
+    
+    pprint("Backup completed but couldn't locate backup file", "yellow")
+    return None
 
 
 def rollback_update(app_dir: str):
@@ -138,7 +179,7 @@ def apply_migrations(app_dir: str) -> Tuple[bool, str]:
         Tuple of (success: bool, message: str)
     """
     # First check for pending migrations
-    success, output = run_migration_command(app_dir, "apply-migrations --dry-run")
+    success, output = run_flask_command(app_dir, "apply-migrations --dry-run")
     pprint(output)  # Print the dry-run output
     if not success:
         return False, output
@@ -148,7 +189,7 @@ def apply_migrations(app_dir: str) -> Tuple[bool, str]:
         return True, "No pending migrations to apply."
     
     # Apply the migrations
-    success, output = run_migration_command(app_dir, "apply-migrations")
+    success, output = run_flask_command(app_dir, "apply-migrations")
     pprint(output)  # Print the migration output
     if not success:
         return False, output
@@ -239,7 +280,7 @@ def update(
         
         # --- Add Lock Step --- 
         pprint("Attempting to lock the Bayanat application...", "yellow")
-        lock_success, lock_output = run_migration_command(path, "lock --reason \"Applying update via CLI...\"")
+        lock_success, lock_output = run_flask_command(path, "lock --reason \"Applying update via CLI...\"")
         if not lock_success:
             pprint(f"Error: Failed to lock the Bayanat application. Output:\n{lock_output}", "bold red")
             raise typer.Exit(code=1)
@@ -286,7 +327,7 @@ def update(
             # --- Add Unlock Step (Success Path) --- 
             if lock_applied:
                 pprint("Unlocking the Bayanat application...", "yellow")
-                unlock_success, unlock_output = run_migration_command(path, "unlock")
+                unlock_success, unlock_output = run_flask_command(path, "unlock")
                 if not unlock_success:
                     # Log error but don't necessarily stop the whole process if unlocking fails
                     pprint(f"Warning: Failed to unlock application. Output:\n{unlock_output}", "bold yellow")
@@ -304,7 +345,7 @@ def update(
         # --- Add Unlock Step (Error Path) --- 
         if lock_applied:
             pprint("Attempting to unlock application after error...", "yellow")
-            unlock_success, unlock_output = run_migration_command(path, "unlock")
+            unlock_success, unlock_output = run_flask_command(path, "unlock")
             if not unlock_success:
                 pprint(f"Warning: Failed to unlock application after error. Manual unlock may be required. Output:\n{unlock_output}", "bold yellow")
             else:
@@ -431,9 +472,17 @@ def get_venv_python(app_dir: str) -> str:
     
     return python_path
 
-def run_migration_command(app_dir: str, command: str, env: dict = None) -> Tuple[bool, str]:
+def run_flask_command(app_dir: str, command: str, env: dict = None) -> Tuple[bool, str]:
     """
-    Run a Flask migration command in the virtual environment.
+    Run a Flask CLI command in the virtual environment.
+    
+    Args:
+        app_dir: The application directory
+        command: The Flask command to run
+        env: Optional environment variables
+        
+    Returns:
+        Tuple of (success: bool, output: str)
     """
     try:
         python_path = get_venv_python(app_dir)
@@ -459,7 +508,7 @@ def run_migration_command(app_dir: str, command: str, env: dict = None) -> Tuple
             return True, result.stdout
         else:
             error_msg = result.stderr or result.stdout
-            return False, f"Migration command failed: {error_msg}"
+            return False, f"Command failed: {error_msg}"
             
     except FileNotFoundError as e:
         return False, f"Environment error: {str(e)}"
@@ -467,6 +516,33 @@ def run_migration_command(app_dir: str, command: str, env: dict = None) -> Tuple
         return False, f"Command execution failed: {e.stderr or e.stdout}"
     except Exception as e:
         return False, f"Unexpected error: {str(e)}"
+
+@app.command()
+def backup(
+    path: str = typer.Argument(".", help="Path to the Bayanat application directory"),
+    output: str = typer.Option(None, "--output", "-o", help="Custom output file path for the backup")
+):
+    """
+    Create a database backup without performing a full update.
+    """
+    try:
+        # Validate the Bayanat directory before proceeding
+        if not validate_bayanat_directory(path):
+            pprint("Error: The specified directory does not appear to be a valid Bayanat application directory.", "bold red")
+            raise typer.Exit(code=1)
+
+        # Perform the backup
+        backup_path = backup_database(path, output)
+        
+        if backup_path:
+            pprint(f"Backup created successfully at: {backup_path}", "bold green")
+        else:
+            pprint("Backup operation failed.", "bold red")
+            raise typer.Exit(code=1)
+            
+    except Exception as e:
+        pprint(f"Error during backup: {str(e)}", "bold red")
+        raise typer.Exit(code=1)
 
 if __name__ == "__main__":
     app()
