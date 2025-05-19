@@ -226,11 +226,43 @@ def apply_migrations(app_dir: str) -> Tuple[bool, str]:
         return False, f"Migration process failed: {output}"
 
 
-def restart_services(app_dir: str):
-    """Restart the application services."""
+def restart_services(app_dir: str, service_name: str = "bayanat"):
+    """
+    Restart the Bayanat service using systemctl.
+    
+    Args:
+        app_dir: Path to the Bayanat application directory
+        service_name: Name of the systemd service (default: "bayanat")
+    
+    Returns:
+        True if restart successful, False otherwise
+    """
     pprint("Restarting services...", "yellow")
-    # Placeholder for service restart logic
-    pass
+    
+    try:
+        # Check if systemctl is available
+        result = subprocess.run(["which", "systemctl"], capture_output=True, text=True)
+        if result.returncode != 0:
+            pprint("systemctl not found. Service restart requires systemd.", "bold red")
+            return False
+            
+        # Attempt to restart the service
+        pprint(f"Attempting to restart {service_name} service...", "yellow")
+        result = subprocess.run(["systemctl", "restart", service_name], 
+                           capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            pprint(f"Successfully restarted {service_name} service.", "green")
+            return True
+        elif "Access denied" in result.stderr or "Permission denied" in result.stderr:
+            pprint("Permission denied. Try running with sudo or as root.", "bold red")
+            return False
+        else:
+            pprint(f"Failed to restart service: {result.stderr}", "bold red")
+            return False
+    except Exception as e:
+        pprint(f"Error during service restart: {str(e)}", "bold red")
+        return False
 
 
 def validate_bayanat_directory(app_dir: str) -> bool:
@@ -285,7 +317,8 @@ def update(
     skip_deps: bool = typer.Option(False, help="Skip dependency installation"),
     skip_migrations: bool = typer.Option(False, help="Skip database migrations"),
     skip_restart: bool = typer.Option(False, help="Skip service restart"),
-    force: bool = typer.Option(False, help="Force update even if already up-to-date")
+    force: bool = typer.Option(False, help="Force update even if already up-to-date"),
+    service_name: str = typer.Option("bayanat", help="Name of the systemd service to restart")
 ):
     """
     Update the Bayanat application.
@@ -329,26 +362,46 @@ def update(
 
             # Check if the version is already up-to-date
             new_version = get_bayanat_version(path)
-            if current_version == new_version:
-                pprint("Bayanat is already up-to-date!", "bold green")
-                # return
+            
+            # Track update in version history
+            if current_version != new_version or force:
+                # Record that an update is in progress
+                pprint(f"Recording update process from {current_version} to {new_version}...", "yellow")
+                success, _ = run_flask_command(path, f"set_version {new_version}")
+                if not success:
+                    pprint("Warning: Failed to record version update start in database.", "bold yellow")
                 
+                if not skip_deps:
+                    pprint("Installing dependencies...", "yellow")
+                    install_dependencies(path)
+                progress.update(task, advance=20)
 
-            if not skip_deps:
-                pprint("Installing dependencies...", "yellow")
-                install_dependencies(path)
-            progress.update(task, advance=20)
+                if not skip_migrations:
+                    pprint("Applying migrations...", "yellow")
+                    success, output = apply_migrations(path)
+                    if not success:
+                        pprint(f"Error applying migrations: {output}", "bold red")
+                        raise Exception("Migration failed")
+                progress.update(task, advance=20)
 
-            if not skip_migrations:
-                pprint("Applying migrations...", "yellow")
-                apply_migrations(path)
-            progress.update(task, advance=20)
-
-            if not skip_restart:
-                pprint("Restarting services...", "yellow")
-                restart_services(path)
-            progress.update(task, advance=20)
-
+                if not skip_restart:
+                    pprint("Restarting services...", "yellow")
+                    restart_services(path, service_name)
+                progress.update(task, advance=20)
+                
+                # Verify versions match after update
+                pprint("Verifying version consistency...", "yellow")
+                success, output = run_flask_command(path, "get_version")
+                if success:
+                    # Check if settings and DB versions match
+                    if "Warning:" in output:
+                        pprint("Warning: Version mismatch detected after update.", "bold yellow")
+                        pprint(output, "yellow")
+                    else:
+                        pprint("Version verification successful.", "green")
+            else:
+                pprint("Bayanat is already up-to-date!", "bold green")
+                
             # --- Add Unlock Step (Success Path) --- 
             if lock_applied:
                 pprint("Unlocking the Bayanat application...", "yellow")
