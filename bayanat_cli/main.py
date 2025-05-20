@@ -365,11 +365,11 @@ def update(
             
             # Track update in version history
             if current_version != new_version or force:
-                # Record that an update is in progress
-                pprint(f"Recording update process from {current_version} to {new_version}...", "yellow")
+                # Update database to reflect new version from pyproject.toml
+                pprint(f"Updating database version from {current_version} to {new_version}...", "yellow")
                 success, _ = run_flask_command(path, f"set_version {new_version}")
                 if not success:
-                    pprint("Warning: Failed to record version update start in database.", "bold yellow")
+                    pprint("Warning: Failed to update version in database.", "bold yellow")
                 
                 if not skip_deps:
                     pprint("Installing dependencies...", "yellow")

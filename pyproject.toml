@@ -12,7 +12,7 @@ authors = [{name = "SJAC", email = "tech@syriaaccountability.org"}]
 dependencies = [
     "typer>=0.4.0,<1.0.0",
     "click>=8.0.0,<9.0.0",  # Optional, since Typer is built on Click
-    "tomli>=1.0.0,<2.0.0"  # Add tomli for reading pyproject files
+    "tomli==1.2.3"  # Using same version as bayanat main app
 ]
 
 [project.urls]
