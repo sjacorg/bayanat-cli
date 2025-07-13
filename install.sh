@@ -29,7 +29,7 @@ error() {
 
 # Detect OS
 detect_os() {
-    if [[ -f /etc/os-release ]]; then
+    if [ -f /etc/os-release ]; then
         . /etc/os-release
         OS=$ID
         VERSION=$VERSION_ID
@@ -42,7 +42,7 @@ detect_os() {
 
 # Check privileges
 check_privileges() {
-    if [[ $EUID -eq 0 ]]; then
+    if [ "$EUID" -eq 0 ]; then
         log "Running as root"
         USER_TYPE="root"
     elif sudo -n true 2>/dev/null; then
@@ -196,7 +196,7 @@ setup_nginx() {
 
 # Create bayanat user
 create_bayanat_user() {
-    if [[ "$USER_TYPE" == "root" ]]; then
+    if [ "$USER_TYPE" = "root" ]; then
         log "Creating bayanat user..."
         
         # Create user if doesn't exist
@@ -241,10 +241,11 @@ install_cli_binary() {
     pipx install git+https://github.com/level09/bayanat-cli.git --force
     
     # Make sure it's in PATH
-    if [[ ":$PATH:" != *"$HOME/.local/bin"* ]]; then
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-        export PATH="$HOME/.local/bin:$PATH"
-    fi
+    case ":$PATH:" in
+        *":$HOME/.local/bin:"*) ;;
+        *) echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+           export PATH="$HOME/.local/bin:$PATH" ;;
+    esac
     
     log "Bayanat CLI installed successfully"
 }
