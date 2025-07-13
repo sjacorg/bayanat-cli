@@ -1,11 +1,13 @@
 # bayanat_cli/main.py
 
+import json
 import os
 import shlex
 import subprocess
 import sys
 import time
 import venv
+from datetime import datetime
 from typing import List, Optional, Tuple
 import requests
 
@@ -313,7 +315,7 @@ def main(ctx: typer.Context):
 
 @app.command()
 def update(
-    path: str = typer.Argument(".", help="Path to the Bayanat application directory"),
+    path: str = typer.Argument(None, help="Path to the Bayanat application directory (auto-detected if not provided)"),
     skip_git: bool = typer.Option(False, help="Skip Git operations"),
     skip_deps: bool = typer.Option(False, help="Skip dependency installation"),
     skip_migrations: bool = typer.Option(False, help="Skip database migrations"),
@@ -324,6 +326,16 @@ def update(
     """
     Update the Bayanat application.
     """
+    # Auto-detect Bayanat installation
+    if path is None:
+        current_dir = os.getcwd()
+        # Look for .bayanat-cli metadata file
+        if os.path.exists(os.path.join(current_dir, ".bayanat-cli")):
+            path = os.path.join(current_dir, "bayanat")
+        else:
+            # Fallback to current directory for backward compatibility
+            path = current_dir
+    
     lock_applied = False # Flag to track if lock was successful
     backup_path = None # Store backup path for potential rollback
     try:
@@ -466,12 +478,12 @@ def display_version(version: str, message: str):
 
 @app.command()
 def install(
-    app_dir: str = typer.Argument(..., help="Directory where Bayanat will be installed"),
     force: bool = typer.Option(False, help="Force installation, even if the directory is not empty")
 ):
     """
-    Install the Bayanat application in the specified directory.
+    Install the Bayanat application in the current directory.
     """
+    app_dir = os.getcwd()  # Use current directory like Ghost CLI
     try:
         # Step 1: Check system requirements and network connectivity
         pprint("Checking system requirements...", "yellow")
@@ -480,40 +492,52 @@ def install(
         check_network_connectivity(BAYANAT_REPO_URL)  # Checks access to the repository
 
         # Step 2: Verify the installation directory and permissions
-        pprint("Verifying installation directory...", "yellow")
-        if os.path.exists(app_dir):
-            check_permissions(app_dir)
-            if os.listdir(app_dir) and not force:
-                pprint(f"[bold red]Error:[/] Directory '{app_dir}' is not empty. Use --force to override.")
-                raise typer.Exit(code=1)
-        else:
-            pprint(f"[yellow]Creating directory '{app_dir}'...[/]")
-            os.makedirs(app_dir)
-            check_permissions(app_dir)
+        pprint(f"Installing Bayanat in: {app_dir}", "blue")
+        check_permissions(app_dir)
+        if os.listdir(app_dir) and not force:
+            pprint(f"[bold red]Error:[/] Directory '{app_dir}' is not empty. Use --force to override.")
+            raise typer.Exit(code=1)
 
-        # Step 3: Clone the repository into the directory
+        # Step 3: Create Bayanat directory structure
+        pprint("Setting up directory structure...", "yellow")
+        bayanat_dir = os.path.join(app_dir, "bayanat")
+        if not os.path.exists(bayanat_dir):
+            os.makedirs(bayanat_dir)
+
+        # Step 4: Clone the repository into the bayanat subdirectory
         pprint("Cloning the Bayanat repository...", "yellow")
-        fetch_latest_code(app_dir, BAYANAT_REPO_URL, force=True)
+        fetch_latest_code(bayanat_dir, BAYANAT_REPO_URL, force=True)
 
-        # Step 4: Create a virtual environment
+        # Step 5: Create a virtual environment in the bayanat directory
         pprint("Setting up the virtual environment...", "yellow")
-        env_dir = os.path.join(app_dir, "env")
+        env_dir = os.path.join(bayanat_dir, "env")
         if not os.path.exists(env_dir):
             venv.create(env_dir, with_pip=True)
 
-        # Step 5: Install dependencies
+        # Step 6: Install dependencies
         pprint("Installing dependencies...", "yellow")
-        install_dependencies(app_dir)
+        install_dependencies(bayanat_dir)
 
-        # Step 6: Apply initial migrations (optional)
+        # Step 7: Create CLI metadata file
+        pprint("Creating installation metadata...", "yellow")
+        cli_metadata = {
+            "version": get_bayanat_version(bayanat_dir),
+            "installed_at": datetime.now().isoformat(),
+            "installation_type": "production"
+        }
+        with open(os.path.join(app_dir, ".bayanat-cli"), "w") as f:
+            json.dump(cli_metadata, f, indent=2)
+
+        # Step 8: Apply initial migrations (optional, will be done in setup)
         pprint("Applying initial database migrations...", "yellow")
-        apply_migrations(app_dir)
+        apply_migrations(bayanat_dir)
 
-        # Step 7: Finalize installation
+        # Step 9: Finalize installation
         pprint("Bayanat installation completed successfully!", "bold green")
+        pprint(f"Run 'bayanat update' from {app_dir} to update in the future.", "blue")
     except Exception as e:
         pprint(f"Error during installation: {str(e)}", "bold red")
-        rollback_update(app_dir)
+        rollback_update(bayanat_dir if 'bayanat_dir' in locals() else app_dir)
         raise typer.Exit(code=1)
 
 
