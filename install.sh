@@ -8,7 +8,6 @@ echo "🚀 Bayanat CLI Installer"
 echo "=========================="
 
 log() { echo "[INFO] $1"; }
-warn() { echo "[WARN] $1"; }
 error() { echo "[ERROR] $1"; exit 1; }
 
 # Simple OS detection
@@ -39,6 +38,7 @@ check_privileges() {
 install_dependencies() {
     log "Installing system dependencies..."
     
+    export DEBIAN_FRONTEND=noninteractive
     apt update
     apt install -y \
         git postgresql postgresql-contrib postgis redis-server nginx \
