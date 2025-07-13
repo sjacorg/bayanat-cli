@@ -100,7 +100,13 @@ install_cli() {
     pipx install git+https://github.com/level09/bayanat-cli.git --force
     pipx ensurepath
     
-    log "CLI installed - you may need to restart your shell or run: export PATH=\"\$HOME/.local/bin:\$PATH\""
+    # Add to current session PATH immediately
+    export PATH="$HOME/.local/bin:$PATH"
+    
+    # Create symlink to make it globally accessible
+    ln -sf "$HOME/.local/bin/bayanat" /usr/local/bin/bayanat 2>/dev/null || true
+    
+    log "CLI installed and ready to use"
 }
 
 # Main installation
