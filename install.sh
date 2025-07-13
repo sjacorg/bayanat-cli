@@ -1,134 +1,89 @@
 #!/bin/bash
 set -e
 
-# Bayanat CLI Installer
-# Simple one-command installation for Bayanat CLI and system dependencies
-
 echo "🚀 Bayanat CLI Installer"
 echo "=========================="
 
 log() { echo "[INFO] $1"; }
 error() { echo "[ERROR] $1"; exit 1; }
 
-# Simple OS detection
-detect_os() {
-    if [ "$(uname -s)" != "Linux" ]; then
-        error "This installer only supports Linux systems"
-    fi
-    
-    if ! command -v apt >/dev/null 2>&1; then
-        error "This installer currently supports Ubuntu/Debian only"
-    fi
-    
-    log "Detected Linux with apt package manager"
+# Check system requirements
+check_system() {
+    [ "$(uname -s)" = "Linux" ] || error "Linux required"
+    command -v apt >/dev/null || error "Ubuntu/Debian required"
+    [ "$EUID" -eq 0 ] || sudo -n true 2>/dev/null || error "Root or passwordless sudo required"
+    log "System checks passed"
 }
 
-# Check if running as root or with sudo
-check_privileges() {
-    if [ "$EUID" -eq 0 ]; then
-        log "Running as root"
-    elif sudo -n true 2>/dev/null; then
-        log "Running with sudo privileges"
-    else
-        error "This script requires root privileges or passwordless sudo"
-    fi
-}
-
-# Install all system dependencies
-install_dependencies() {
-    log "Installing system dependencies..."
-    
+# Install everything needed
+install_packages() {
+    log "Installing packages..."
     export DEBIAN_FRONTEND=noninteractive
-    apt update
-    apt install -y \
+    apt update -qq
+    apt install -y -qq \
         git postgresql postgresql-contrib postgis redis-server nginx \
         python3 python3-pip python3-venv python3-dev build-essential \
         libpq-dev libxml2-dev libxslt1-dev libssl-dev libffi-dev \
-        libjpeg-dev libzip-dev libimage-exiftool-perl ffmpeg \
-        curl wget pipx
-    
-    log "System dependencies installed"
+        libjpeg-dev libzip-dev libimage-exiftool-perl ffmpeg curl wget
 }
 
-# Setup PostgreSQL
-setup_postgresql() {
-    log "Setting up PostgreSQL..."
+# Setup services
+setup_services() {
+    log "Configuring services..."
     
-    systemctl enable postgresql
-    systemctl start postgresql
-    
-    # Create database and user (ignore if exists)
+    # PostgreSQL
+    systemctl enable --quiet postgresql && systemctl start postgresql
     sudo -u postgres psql -c "CREATE USER bayanat WITH PASSWORD 'bayanat_password';" 2>/dev/null || true
     sudo -u postgres psql -c "CREATE DATABASE bayanat OWNER bayanat;" 2>/dev/null || true
     sudo -u postgres psql -d bayanat -c "CREATE EXTENSION IF NOT EXISTS postgis;" 2>/dev/null || true
     
-    log "PostgreSQL configured"
+    # Redis & Nginx
+    systemctl enable --quiet redis-server && systemctl start redis-server
+    systemctl enable --quiet nginx
 }
 
-# Setup other services
-setup_services() {
-    log "Setting up services..."
-    
-    systemctl enable redis-server
-    systemctl start redis-server
-    systemctl enable nginx
-    
-    log "Services configured"
-}
-
-# Create bayanat user (only if root)
+# Create user (if root)
 setup_user() {
-    if [ "$EUID" -eq 0 ]; then
-        log "Creating bayanat user..."
-        
-        if ! id "bayanat" >/dev/null 2>&1; then
-            useradd -m -s /bin/bash bayanat
-        fi
-        
-        usermod -aG sudo bayanat
-        echo 'bayanat ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/bayanat
-        chmod 440 /etc/sudoers.d/bayanat
-        
-        log "Bayanat user configured"
-    fi
+    [ "$EUID" -eq 0 ] || return 0
+    log "Creating bayanat user..."
+    
+    id bayanat >/dev/null 2>&1 || useradd -m -s /bin/bash bayanat
+    usermod -aG sudo bayanat
+    echo 'bayanat ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/bayanat
+    chmod 440 /etc/sudoers.d/bayanat
 }
 
 # Install CLI
 install_cli() {
-    log "Installing Bayanat CLI..."
+    log "Installing CLI..."
     
-    pipx install git+https://github.com/level09/bayanat-cli.git --force
-    pipx ensurepath
+    # Use pip with --break-system-packages for Ubuntu 24.04
+    python3 -m pip install --break-system-packages git+https://github.com/level09/bayanat-cli.git --force-reinstall >/dev/null 2>&1
     
-    # Add to current session PATH immediately
-    export PATH="$HOME/.local/bin:$PATH"
+    # Create global symlink
+    CLI_PATH=$(python3 -c "import sys; print(f'{sys.prefix}/bin/bayanat')" 2>/dev/null)
+    [ -f "$CLI_PATH" ] && ln -sf "$CLI_PATH" /usr/local/bin/bayanat
     
-    # Create symlink to make it globally accessible
-    ln -sf "$HOME/.local/bin/bayanat" /usr/local/bin/bayanat 2>/dev/null || true
-    
-    log "CLI installed and ready to use"
+    # Verify installation
+    command -v bayanat >/dev/null || error "CLI installation failed"
+    log "CLI ready: $(command -v bayanat)"
 }
 
-# Main installation
+# Main
 main() {
     log "Starting installation..."
-    
-    detect_os
-    check_privileges
-    install_dependencies
-    setup_postgresql
+    check_system
+    install_packages  
     setup_services
     setup_user
     install_cli
     
     echo ""
-    log "🎉 Installation completed!"
+    log "🎉 Installation complete!"
     echo ""
-    echo "Next steps:"
-    echo "1. mkdir -p /opt/myproject && cd /opt/myproject"
-    echo "2. bayanat install"
-    echo ""
-    log "PostgreSQL and Redis are running and ready!"
+    echo "Usage:"
+    echo "  mkdir /opt/myproject && cd /opt/myproject"
+    echo "  bayanat install"
 }
 
 main "$@"
