@@ -7,304 +7,122 @@ set -e
 echo "🚀 Bayanat CLI Installer"
 echo "=========================="
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+log() { echo "[INFO] $1"; }
+warn() { echo "[WARN] $1"; }
+error() { echo "[ERROR] $1"; exit 1; }
 
-log() {
-    echo "[INFO] $1"
-}
-
-warn() {
-    echo "[WARN] $1"
-}
-
-error() {
-    echo "[ERROR] $1"
-    exit 1
-}
-
-# Detect OS using standard Unix tools
+# Simple OS detection
 detect_os() {
-    # Check if we're on Linux
     if [ "$(uname -s)" != "Linux" ]; then
         error "This installer only supports Linux systems"
     fi
     
-    # Detect distribution
-    if command -v lsb_release >/dev/null 2>&1; then
-        OS=$(lsb_release -si | tr '[:upper:]' '[:lower:]')
-    elif [ -f /etc/os-release ]; then
-        OS=$(grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
-    else
-        error "Cannot detect Linux distribution"
+    if ! command -v apt >/dev/null 2>&1; then
+        error "This installer currently supports Ubuntu/Debian only"
     fi
     
-    ARCH=$(uname -m)
-    log "Detected: $OS on $ARCH"
+    log "Detected Linux with apt package manager"
 }
 
-# Check privileges
+# Check if running as root or with sudo
 check_privileges() {
     if [ "$EUID" -eq 0 ]; then
         log "Running as root"
-        USER_TYPE="root"
     elif sudo -n true 2>/dev/null; then
         log "Running with sudo privileges"
-        USER_TYPE="sudo"
     else
-        error "This script requires root privileges or passwordless sudo access"
+        error "This script requires root privileges or passwordless sudo"
     fi
 }
 
-# Install system dependencies for Ubuntu/Debian
-install_ubuntu_dependencies() {
-    log "Installing system dependencies for Ubuntu/Debian..."
+# Install all system dependencies
+install_dependencies() {
+    log "Installing system dependencies..."
     
-    # Update package list
     apt update
-    
-    # Install required packages
     apt install -y \
-        git \
-        postgresql \
-        postgresql-contrib \
-        postgresql-client \
-        postgis \
-        redis-server \
-        nginx \
-        python3 \
-        python3-pip \
-        python3-venv \
-        python3-dev \
-        build-essential \
-        libpq-dev \
-        libxml2-dev \
-        libxslt1-dev \
-        libssl-dev \
-        libffi-dev \
-        libjpeg-dev \
-        libzip-dev \
-        libimage-exiftool-perl \
-        ffmpeg \
-        curl \
-        wget
+        git postgresql postgresql-contrib postgis redis-server nginx \
+        python3 python3-pip python3-venv python3-dev build-essential \
+        libpq-dev libxml2-dev libxslt1-dev libssl-dev libffi-dev \
+        libjpeg-dev libzip-dev libimage-exiftool-perl ffmpeg \
+        curl wget pipx
     
-    log "System dependencies installed successfully"
-}
-
-# Install system dependencies for CentOS/RHEL
-install_centos_dependencies() {
-    log "Installing system dependencies for CentOS/RHEL..."
-    
-    # Update package list
-    yum update -y || dnf update -y
-    
-    # Install EPEL repository
-    yum install -y epel-release || dnf install -y epel-release
-    
-    # Install required packages
-    yum install -y \
-        git \
-        postgresql \
-        postgresql-server \
-        postgresql-contrib \
-        postgis \
-        redis \
-        nginx \
-        python3 \
-        python3-pip \
-        python3-devel \
-        gcc \
-        gcc-c++ \
-        make \
-        libpq-devel \
-        libxml2-devel \
-        libxslt-devel \
-        openssl-devel \
-        libffi-devel \
-        libjpeg-turbo-devel \
-        perl-Image-ExifTool \
-        ffmpeg \
-        curl \
-        wget || \
-    dnf install -y \
-        git \
-        postgresql \
-        postgresql-server \
-        postgresql-contrib \
-        postgis \
-        redis \
-        nginx \
-        python3 \
-        python3-pip \
-        python3-devel \
-        gcc \
-        gcc-c++ \
-        make \
-        libpq-devel \
-        libxml2-devel \
-        libxslt-devel \
-        openssl-devel \
-        libffi-devel \
-        libjpeg-turbo-devel \
-        perl-Image-ExifTool \
-        ffmpeg \
-        curl \
-        wget
-    
-    log "System dependencies installed successfully"
+    log "System dependencies installed"
 }
 
 # Setup PostgreSQL
 setup_postgresql() {
     log "Setting up PostgreSQL..."
     
-    # Start and enable PostgreSQL
-    systemctl enable postgresql || systemctl enable postgresql-14
-    systemctl start postgresql || systemctl start postgresql-14
+    systemctl enable postgresql
+    systemctl start postgresql
     
-    # Create bayanat database and user (if not exists)
-    sudo -u postgres psql -c "SELECT 1 FROM pg_user WHERE usename = 'bayanat'" | grep -q 1 || \
-    sudo -u postgres psql -c "CREATE USER bayanat WITH PASSWORD 'bayanat_password';"
+    # Create database and user (ignore if exists)
+    sudo -u postgres psql -c "CREATE USER bayanat WITH PASSWORD 'bayanat_password';" 2>/dev/null || true
+    sudo -u postgres psql -c "CREATE DATABASE bayanat OWNER bayanat;" 2>/dev/null || true
+    sudo -u postgres psql -d bayanat -c "CREATE EXTENSION IF NOT EXISTS postgis;" 2>/dev/null || true
     
-    sudo -u postgres psql -c "SELECT 1 FROM pg_database WHERE datname = 'bayanat'" | grep -q 1 || \
-    sudo -u postgres psql -c "CREATE DATABASE bayanat OWNER bayanat;"
-    
-    # Enable PostGIS extension
-    sudo -u postgres psql -d bayanat -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-    
-    log "PostgreSQL setup completed"
+    log "PostgreSQL configured"
 }
 
-# Setup Redis
-setup_redis() {
-    log "Setting up Redis..."
+# Setup other services
+setup_services() {
+    log "Setting up services..."
     
-    # Start and enable Redis
-    systemctl enable redis-server || systemctl enable redis
-    systemctl start redis-server || systemctl start redis
-    
-    log "Redis setup completed"
-}
-
-# Setup nginx
-setup_nginx() {
-    log "Setting up nginx..."
-    
-    # Enable nginx (don't start yet - will be configured later)
+    systemctl enable redis-server
+    systemctl start redis-server
     systemctl enable nginx
     
-    log "Nginx enabled (configuration will be done during app installation)"
+    log "Services configured"
 }
 
-# Create bayanat user
-create_bayanat_user() {
-    if [ "$USER_TYPE" = "root" ]; then
+# Create bayanat user (only if root)
+setup_user() {
+    if [ "$EUID" -eq 0 ]; then
         log "Creating bayanat user..."
         
-        # Create user if doesn't exist
-        if ! id "bayanat" &>/dev/null; then
+        if ! id "bayanat" >/dev/null 2>&1; then
             useradd -m -s /bin/bash bayanat
-            log "Created bayanat user"
-        else
-            log "Bayanat user already exists"
         fi
         
-        # Add to sudo group
         usermod -aG sudo bayanat
-        
-        # Configure passwordless sudo
         echo 'bayanat ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/bayanat
         chmod 440 /etc/sudoers.d/bayanat
         
-        log "Bayanat user configured with sudo privileges"
-    else
-        log "Running as sudo user - using current user for installation"
+        log "Bayanat user configured"
     fi
 }
 
-# Download and install CLI binary
-install_cli_binary() {
-    log "Installing Bayanat CLI binary..."
+# Install CLI
+install_cli() {
+    log "Installing Bayanat CLI..."
     
-    # Download latest release
-    CLI_URL="https://github.com/level09/bayanat-cli/archive/refs/heads/master.zip"
-    TEMP_DIR="/tmp/bayanat-cli-install"
-    
-    # For now, fall back to pip installation since we don't have releases yet
-    log "Installing CLI via pip (temporary - will switch to binary releases)"
-    
-    # Install pipx if not available
-    if ! command -v pipx &> /dev/null; then
-        python3 -m pip install --user pipx
-        python3 -m pipx ensurepath
-    fi
-    
-    # Install bayanat-cli
     pipx install git+https://github.com/level09/bayanat-cli.git --force
+    pipx ensurepath
     
-    # Make sure it's in PATH
-    case ":$PATH:" in
-        *":$HOME/.local/bin:"*) ;;
-        *) echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-           export PATH="$HOME/.local/bin:$PATH" ;;
-    esac
-    
-    log "Bayanat CLI installed successfully"
+    log "CLI installed - you may need to restart your shell or run: export PATH=\"\$HOME/.local/bin:\$PATH\""
 }
 
-# Main installation function
+# Main installation
 main() {
-    log "Starting Bayanat CLI installation..."
+    log "Starting installation..."
     
-    # System checks
     detect_os
     check_privileges
-    
-    # Install dependencies based on OS
-    case $OS in
-        ubuntu|debian)
-            install_ubuntu_dependencies
-            ;;
-        centos|rhel|rocky|almalinux)
-            install_centos_dependencies
-            ;;
-        *)
-            error "Unsupported OS: $OS. Please install manually."
-            ;;
-    esac
-    
-    # Setup services
+    install_dependencies
     setup_postgresql
-    setup_redis
-    setup_nginx
+    setup_services
+    setup_user
+    install_cli
     
-    # User management
-    create_bayanat_user
-    
-    # Install CLI
-    install_cli_binary
-    
-    # Final message
     echo ""
-    log "🎉 Bayanat CLI installation completed successfully!"
+    log "🎉 Installation completed!"
     echo ""
-    echo -e "${BLUE}Next steps:${NC}"
-    echo "1. Create a directory for your Bayanat installation:"
-    echo "   mkdir -p /opt/myproject && cd /opt/myproject"
+    echo "Next steps:"
+    echo "1. mkdir -p /opt/myproject && cd /opt/myproject"
+    echo "2. bayanat install"
     echo ""
-    echo "2. Install Bayanat application:"
-    echo "   bayanat install"
-    echo ""
-    echo "3. For updates in the future:"
-    echo "   bayanat update"
-    echo ""
-    log "System services (PostgreSQL, Redis) are running and ready!"
+    log "PostgreSQL and Redis are running and ready!"
 }
 
-# Run main function
 main "$@"
