@@ -474,6 +474,48 @@ def check_network_connectivity(url: str):
         pprint("[bold red]Error:[/] Network connectivity issue. Cannot reach the repository.")
         raise typer.Exit(code=1)
 
+def check_user_privileges():
+    """Check if user has necessary privileges for installation."""
+    current_user = run_command(["whoami"]).strip()
+    is_root = current_user == "root"
+    
+    # Test sudo access
+    has_sudo = False
+    try:
+        run_command(["sudo", "-n", "true"])
+        has_sudo = True
+    except:
+        pass
+    
+    if is_root:
+        pprint("Running as root - will create dedicated bayanat user", "blue")
+        return "root"
+    elif has_sudo:
+        pprint(f"Running as {current_user} with sudo access", "blue")
+        return "sudo"
+    else:
+        pprint(f"[bold red]Error:[/] Current user '{current_user}' lacks sudo privileges", "red")
+        pprint("Please run as root or ensure passwordless sudo access", "yellow")
+        raise typer.Exit(code=1)
+
+def setup_bayanat_user():
+    """Create bayanat user if running as root."""
+    pprint("Creating bayanat user with sudo privileges...", "yellow")
+    
+    try:
+        # Create user with home directory
+        run_command(["useradd", "-m", "-s", "/bin/bash", "bayanat"])
+    except:
+        # User might already exist
+        pprint("User 'bayanat' already exists, continuing...", "yellow")
+    
+    # Add to sudo group and configure passwordless sudo
+    run_command(["usermod", "-aG", "sudo", "bayanat"])
+    run_command(["bash", "-c", "echo 'bayanat ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/bayanat"])
+    run_command(["chmod", "440", "/etc/sudoers.d/bayanat"])
+    
+    pprint("Bayanat user configured successfully", "green")
+
 def install_system_dependencies():
     """Install required system packages for Bayanat."""
     pprint("Installing system dependencies...", "yellow")
@@ -607,13 +649,18 @@ def install(
     """
     app_dir = os.getcwd()  # Use current directory like Ghost CLI
     try:
-        # Step 1: Check system requirements and network connectivity
+        # Step 1: Check user privileges and system requirements
         pprint("Checking system requirements...", "yellow")
+        user_type = check_user_privileges()  # Check if root or sudo user
         check_system_requirements()  # Checks Python version and Git installation
         check_virtualenv_support()    # Checks for venv availability
         check_network_connectivity(BAYANAT_REPO_URL)  # Checks access to the repository
 
-        # Step 2: Install system dependencies (like Ghost CLI)
+        # Step 2: Setup user if needed
+        if user_type == "root" and not skip_system:
+            setup_bayanat_user()
+
+        # Step 3: Install system dependencies
         if not skip_system:
             install_system_dependencies()
             setup_services()
