@@ -15,29 +15,36 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 log() {
-    echo -e "${GREEN}[INFO]${NC} $1"
+    echo "[INFO] $1"
 }
 
 warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
+    echo "[WARN] $1"
 }
 
 error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    echo "[ERROR] $1"
     exit 1
 }
 
-# Detect OS
+# Detect OS using standard Unix tools
 detect_os() {
-    if [ -f /etc/os-release ]; then
-        . /etc/os-release
-        OS=$ID
-        VERSION=$VERSION_ID
-    else
-        error "Cannot detect OS. /etc/os-release not found."
+    # Check if we're on Linux
+    if [ "$(uname -s)" != "Linux" ]; then
+        error "This installer only supports Linux systems"
     fi
     
-    log "Detected OS: $OS $VERSION"
+    # Detect distribution
+    if command -v lsb_release >/dev/null 2>&1; then
+        OS=$(lsb_release -si | tr '[:upper:]' '[:lower:]')
+    elif [ -f /etc/os-release ]; then
+        OS=$(grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
+    else
+        error "Cannot detect Linux distribution"
+    fi
+    
+    ARCH=$(uname -m)
+    log "Detected: $OS on $ARCH"
 }
 
 # Check privileges
