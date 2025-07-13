@@ -156,9 +156,23 @@ def fetch_latest_code(app_dir: str, repo_url: str, force: bool):
     else:
         pprint("Fetching latest code...", "yellow")
         run_command(["git", "fetch"], cwd=app_dir)
-        run_command(["git", "checkout", "master"], cwd=app_dir)
+        
+        # Get the default branch name
+        try:
+            default_branch = run_command(["git", "symbolic-ref", "refs/remotes/origin/HEAD"], cwd=app_dir).strip()
+            default_branch = default_branch.split('/')[-1]  # Extract branch name from refs/remotes/origin/branch
+        except:
+            # Fallback to common default branches
+            try:
+                run_command(["git", "checkout", "main"], cwd=app_dir)
+                default_branch = "main"
+            except:
+                run_command(["git", "checkout", "master"], cwd=app_dir)
+                default_branch = "master"
+        
+        run_command(["git", "checkout", default_branch], cwd=app_dir)
         if force:
-            run_command(["git", "reset", "--hard", "origin/master"], cwd=app_dir)
+            run_command(["git", "reset", "--hard", f"origin/{default_branch}"], cwd=app_dir)
         run_command(["git", "pull"], cwd=app_dir)
 
 
