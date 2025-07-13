@@ -551,20 +551,46 @@ def setup_services():
         pprint("You may need to configure services manually.", "yellow")
 
 def create_env_config(app_dir: str):
-    """Create basic environment configuration for Bayanat."""
-    env_content = """# Bayanat Environment Configuration
+    """Create environment configuration using Bayanat's gen-env.sh script."""
+    pprint("Generating environment configuration with proper secrets...", "yellow")
+    
+    # Run the gen-env.sh script for native installation with overwrite
+    try:
+        run_command(["./gen-env.sh", "-n", "-o"], cwd=app_dir)
+        
+        # Append database and Redis configuration
+        env_file = os.path.join(app_dir, ".env")
+        with open(env_file, "a") as f:
+            f.write("\n")
+            f.write("DATABASE_URL=postgresql://bayanat:bayanat_password@localhost/bayanat\n")
+            f.write("REDIS_URL=redis://localhost:6379/0\n")
+        
+        pprint(f"Environment configuration created at {env_file}", "green")
+        
+    except Exception as e:
+        pprint(f"Warning: Failed to generate environment with gen-env.sh: {str(e)}", "yellow")
+        pprint("Creating basic environment configuration...", "yellow")
+        
+        # Fallback to basic configuration
+        env_content = """FLASK_APP=run.py
+FLASK_DEBUG=0
+
+SECRET_KEY='$(openssl rand -base64 32)'
+SECURITY_PASSWORD_SALT='$(openssl rand -base64 32)'
+SECURITY_TOTP_SECRETS='$(openssl rand -base64 32)'
+SECURITY_TWO_FACTOR=True
+SECURITY_TWO_FACTOR_RESCUE_MAIL=''
+SECURITY_TWO_FACTOR_AUTHENTICATOR_VALIDITY=90
+
 DATABASE_URL=postgresql://bayanat:bayanat_password@localhost/bayanat
 REDIS_URL=redis://localhost:6379/0
-SECRET_KEY=change-this-in-production-$(openssl rand -hex 32)
-FLASK_ENV=production
-SETUP_COMPLETE=True
 """
-    
-    env_file = os.path.join(app_dir, ".env")
-    with open(env_file, "w") as f:
-        f.write(env_content)
         
-    pprint(f"Environment configuration created at {env_file}", "green")
+        env_file = os.path.join(app_dir, ".env")
+        with open(env_file, "w") as f:
+            f.write(env_content)
+            
+        pprint(f"Basic environment configuration created at {env_file}", "green")
 
 def display_version(version: str, message: str):
     """Display version information in a formatted panel."""
