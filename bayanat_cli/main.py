@@ -471,6 +471,98 @@ def check_network_connectivity(url: str):
         pprint("[bold red]Error:[/] Network connectivity issue. Cannot reach the repository.")
         raise typer.Exit(code=1)
 
+def install_system_dependencies():
+    """Install required system packages for Bayanat."""
+    pprint("Installing system dependencies...", "yellow")
+    
+    # Update package list
+    run_command(["sudo", "apt", "update"])
+    
+    # Install required packages
+    packages = [
+        "git",
+        "postgresql", 
+        "postgresql-contrib",
+        "redis-server",
+        "libimage-exiftool-perl",  # For pyexifinfo
+        "build-essential",
+        "python3-dev",
+        "libjpeg8-dev",
+        "libzip-dev", 
+        "libxml2-dev",
+        "libssl-dev",
+        "libffi-dev",
+        "libxslt1-dev",
+        "libpq-dev",
+        "nginx",
+        "ffmpeg",  # For media processing
+        "postgis"  # For geospatial support
+    ]
+    
+    run_command(["sudo", "apt", "install", "-y"] + packages)
+    pprint("System dependencies installed successfully.", "green")
+
+def setup_postgresql():
+    """Set up PostgreSQL database and user for Bayanat."""
+    pprint("Setting up PostgreSQL database...", "yellow")
+    
+    try:
+        # Create bayanat database and user
+        db_commands = [
+            "CREATE USER bayanat WITH PASSWORD 'bayanat_password';",
+            "CREATE DATABASE bayanat OWNER bayanat;",
+            "\\c bayanat",
+            "CREATE EXTENSION IF NOT EXISTS postgis;"
+        ]
+        
+        # Execute PostgreSQL commands
+        for cmd in db_commands:
+            run_command(["sudo", "-u", "postgres", "psql", "-c", cmd])
+            
+        pprint("PostgreSQL database setup completed.", "green")
+        
+    except Exception as e:
+        pprint(f"Warning: PostgreSQL setup failed: {str(e)}", "yellow")
+        pprint("You may need to set up the database manually.", "yellow")
+
+def setup_services():
+    """Configure and start required services."""
+    pprint("Setting up services...", "yellow")
+    
+    try:
+        # Start and enable PostgreSQL
+        run_command(["sudo", "systemctl", "enable", "postgresql"])
+        run_command(["sudo", "systemctl", "start", "postgresql"])
+        
+        # Start and enable Redis
+        run_command(["sudo", "systemctl", "enable", "redis-server"])
+        run_command(["sudo", "systemctl", "start", "redis-server"])
+        
+        # Enable nginx but don't start it yet (will be configured later)
+        run_command(["sudo", "systemctl", "enable", "nginx"])
+        
+        pprint("Services configured successfully.", "green")
+        
+    except Exception as e:
+        pprint(f"Warning: Service setup failed: {str(e)}", "yellow")
+        pprint("You may need to configure services manually.", "yellow")
+
+def create_env_config(app_dir: str):
+    """Create basic environment configuration for Bayanat."""
+    env_content = """# Bayanat Environment Configuration
+DATABASE_URL=postgresql://bayanat:bayanat_password@localhost/bayanat
+REDIS_URL=redis://localhost:6379/0
+SECRET_KEY=change-this-in-production-$(openssl rand -hex 32)
+FLASK_ENV=production
+SETUP_COMPLETE=True
+"""
+    
+    env_file = os.path.join(app_dir, ".env")
+    with open(env_file, "w") as f:
+        f.write(env_content)
+        
+    pprint(f"Environment configuration created at {env_file}", "green")
+
 def display_version(version: str, message: str):
     """Display version information in a formatted panel."""
     panel = Panel(f"{message}: [bold blue]{version}[/]", expand=False)
@@ -478,7 +570,8 @@ def display_version(version: str, message: str):
 
 @app.command()
 def install(
-    force: bool = typer.Option(False, help="Force installation, even if the directory is not empty")
+    force: bool = typer.Option(False, help="Force installation, even if the directory is not empty"),
+    skip_system: bool = typer.Option(False, help="Skip system dependencies installation")
 ):
     """
     Install the Bayanat application in the current directory.
@@ -491,50 +584,63 @@ def install(
         check_virtualenv_support()    # Checks for venv availability
         check_network_connectivity(BAYANAT_REPO_URL)  # Checks access to the repository
 
-        # Step 2: Verify the installation directory and permissions
+        # Step 2: Install system dependencies (like Ghost CLI)
+        if not skip_system:
+            install_system_dependencies()
+            setup_services()
+            setup_postgresql()
+
+        # Step 3: Verify the installation directory and permissions
         pprint(f"Installing Bayanat in: {app_dir}", "blue")
         check_permissions(app_dir)
         if os.listdir(app_dir) and not force:
             pprint(f"[bold red]Error:[/] Directory '{app_dir}' is not empty. Use --force to override.")
             raise typer.Exit(code=1)
 
-        # Step 3: Create Bayanat directory structure
+        # Step 4: Create Bayanat directory structure
         pprint("Setting up directory structure...", "yellow")
         bayanat_dir = os.path.join(app_dir, "bayanat")
         if not os.path.exists(bayanat_dir):
             os.makedirs(bayanat_dir)
 
-        # Step 4: Clone the repository into the bayanat subdirectory
+        # Step 5: Clone the repository into the bayanat subdirectory
         pprint("Cloning the Bayanat repository...", "yellow")
         fetch_latest_code(bayanat_dir, BAYANAT_REPO_URL, force=True)
 
-        # Step 5: Create a virtual environment in the bayanat directory
+        # Step 6: Create a virtual environment in the bayanat directory
         pprint("Setting up the virtual environment...", "yellow")
         env_dir = os.path.join(bayanat_dir, "env")
         if not os.path.exists(env_dir):
             venv.create(env_dir, with_pip=True)
 
-        # Step 6: Install dependencies
-        pprint("Installing dependencies...", "yellow")
+        # Step 7: Install Python dependencies
+        pprint("Installing Python dependencies...", "yellow")
         install_dependencies(bayanat_dir)
 
-        # Step 7: Create CLI metadata file
+        # Step 8: Create environment configuration file
+        pprint("Creating configuration file...", "yellow")
+        create_env_config(bayanat_dir)
+
+        # Step 9: Create CLI metadata file
         pprint("Creating installation metadata...", "yellow")
         cli_metadata = {
             "version": get_bayanat_version(bayanat_dir),
             "installed_at": datetime.now().isoformat(),
-            "installation_type": "production"
+            "installation_type": "production",
+            "database_url": "postgresql://bayanat:bayanat_password@localhost/bayanat"
         }
         with open(os.path.join(app_dir, ".bayanat-cli"), "w") as f:
             json.dump(cli_metadata, f, indent=2)
 
-        # Step 8: Apply initial migrations (optional, will be done in setup)
+        # Step 10: Apply initial migrations (with database setup)
         pprint("Applying initial database migrations...", "yellow")
         apply_migrations(bayanat_dir)
 
-        # Step 9: Finalize installation
+        # Step 11: Finalize installation
         pprint("Bayanat installation completed successfully!", "bold green")
+        pprint(f"Database: postgresql://bayanat:bayanat_password@localhost/bayanat", "blue")
         pprint(f"Run 'bayanat update' from {app_dir} to update in the future.", "blue")
+        
     except Exception as e:
         pprint(f"Error during installation: {str(e)}", "bold red")
         rollback_update(bayanat_dir if 'bayanat_dir' in locals() else app_dir)
