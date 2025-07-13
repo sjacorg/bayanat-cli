@@ -1,6 +1,7 @@
 # bayanat_cli/main.py
 
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -338,7 +339,7 @@ def update(
         
         # --- Add Lock Step --- 
         pprint("Attempting to lock the Bayanat application...", "yellow")
-        lock_success, lock_output = run_flask_command(path, "lock --reason \"Applying update via CLI...\"")
+        lock_success, lock_output = run_flask_command(path, "lock --reason \"CLI update in progress\"")
         if not lock_success:
             pprint(f"Error: Failed to lock the Bayanat application. Output:\n{lock_output}", "bold red")
             raise typer.Exit(code=1)
@@ -575,7 +576,7 @@ def run_flask_command(app_dir: str, command: str, env: dict = None) -> Tuple[boo
         
         # Run the Flask command using the virtual environment's Python
         result = subprocess.run(
-            [python_path, "-m", "flask"] + command.split(),
+            [python_path, "-m", "flask"] + shlex.split(command),
             cwd=app_dir,
             env=cmd_env,
             capture_output=True,
