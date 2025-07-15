@@ -58,34 +58,34 @@ install_cli() {
     log "Installing CLI..."
     
     # Install CLI using system pip
-    python3 -m pip install --break-system-packages git+https://github.com/sjacorg/bayanat-cli.git --force-reinstall >/dev/null 2>&1
+    python3 -m pip install --break-system-packages git+https://github.com/sjacorg/bayanat-cli.git --force-reinstall
     
-    # Find CLI path using Python module location
-    CLI_PATH=$(python3 -c "
+    # Find CLI path - check common locations
+    CLI_PATH=""
+    for path in "/usr/local/bin/bayanat" "/usr/bin/bayanat" "$HOME/.local/bin/bayanat"; do
+        if [ -f "$path" ]; then
+            CLI_PATH="$path"
+            break
+        fi
+    done
+    
+    # If not found, create it manually
+    if [ -z "$CLI_PATH" ]; then
+        # Create a simple wrapper script
+        cat > /usr/local/bin/bayanat << 'EOF'
+#!/usr/bin/env python3
 import sys
-import os
-try:
-    import bayanat_cli
-    module_path = bayanat_cli.__file__
-    bin_path = os.path.join(sys.prefix, 'bin', 'bayanat')
-    if os.path.exists(bin_path):
-        print(bin_path)
-    else:
-        # Try local bin
-        local_bin = os.path.join(os.path.expanduser('~'), '.local', 'bin', 'bayanat')
-        if os.path.exists(local_bin):
-            print(local_bin)
-except ImportError:
-    pass
-" 2>/dev/null)
-    
-    # Create global symlink
-    if [ -n "$CLI_PATH" ] && [ -f "$CLI_PATH" ]; then
-        ln -sf "$CLI_PATH" /usr/local/bin/bayanat
+from bayanat_cli.main import main
+if __name__ == "__main__":
+    main()
+EOF
         chmod +x /usr/local/bin/bayanat
-        log "CLI symlinked from: $CLI_PATH"
+        CLI_PATH="/usr/local/bin/bayanat"
+        log "Created CLI wrapper: $CLI_PATH"
     else
-        error "Could not locate bayanat CLI after installation"
+        # Create symlink to existing binary
+        ln -sf "$CLI_PATH" /usr/local/bin/bayanat
+        log "CLI symlinked from: $CLI_PATH"
     fi
     
     # Verify installation
