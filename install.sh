@@ -60,12 +60,25 @@ install_cli() {
     # Use pip with --break-system-packages for Ubuntu 24.04
     python3 -m pip install --break-system-packages git+https://github.com/sjacorg/bayanat-cli.git --force-reinstall >/dev/null 2>&1
     
-    # Create global symlink
-    CLI_PATH=$(python3 -c "import sys; print(f'{sys.prefix}/bin/bayanat')" 2>/dev/null)
-    [ -f "$CLI_PATH" ] && ln -sf "$CLI_PATH" /usr/local/bin/bayanat
+    # Find CLI path more reliably
+    CLI_PATH=$(find /usr/local/bin /usr/bin ~/.local/bin -name "bayanat" 2>/dev/null | head -1)
+    
+    if [ -z "$CLI_PATH" ]; then
+        # Try to find in Python installation
+        CLI_PATH=$(python3 -c "import sys; print(f'{sys.prefix}/bin/bayanat')" 2>/dev/null)
+    fi
+    
+    # Create global symlink if found
+    if [ -f "$CLI_PATH" ]; then
+        ln -sf "$CLI_PATH" /usr/local/bin/bayanat
+        chmod +x /usr/local/bin/bayanat
+        log "CLI symlinked from: $CLI_PATH"
+    else
+        error "Could not locate bayanat CLI after installation"
+    fi
     
     # Verify installation
-    command -v bayanat >/dev/null || error "CLI installation failed"
+    command -v bayanat >/dev/null || error "CLI installation failed - not in PATH"
     log "CLI ready: $(command -v bayanat)"
 }
 
@@ -81,9 +94,17 @@ main() {
     echo ""
     log "🎉 Installation complete!"
     echo ""
-    echo "Usage:"
-    echo "  mkdir /opt/myproject && cd /opt/myproject"
-    echo "  bayanat install"
+    echo "Next steps:"
+    echo "  1. Switch to bayanat user:"
+    echo "     sudo su - bayanat"
+    echo ""
+    echo "  2. Create project directory:"
+    echo "     mkdir /opt/myproject && cd /opt/myproject"
+    echo ""
+    echo "  3. Install Bayanat application:"
+    echo "     bayanat install"
+    echo ""
+    echo "For help: bayanat --help"
 }
 
 main "$@"
