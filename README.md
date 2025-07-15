@@ -129,4 +129,4 @@ pip install -e .
 
 ## License
 
-This system is distributed WITHOUT ANY WARRANTY under the GNU Affero General Public License v3.0.
+This project is licensed under the GNU Affero General Public License v3.0. See the [LICENSE](license.txt) file for details.
