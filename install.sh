@@ -58,7 +58,7 @@ install_cli() {
     log "Installing CLI..."
     
     # Use pip with --break-system-packages for Ubuntu 24.04
-    python3 -m pip install --break-system-packages git+https://github.com/level09/bayanat-cli.git --force-reinstall >/dev/null 2>&1
+    python3 -m pip install --break-system-packages git+https://github.com/sjacorg/bayanat-cli.git --force-reinstall >/dev/null 2>&1
     
     # Create global symlink
     CLI_PATH=$(python3 -c "import sys; print(f'{sys.prefix}/bin/bayanat')" 2>/dev/null)
