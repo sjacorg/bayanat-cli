@@ -57,19 +57,30 @@ setup_user() {
 install_cli() {
     log "Installing CLI..."
     
-    # Use pip with --break-system-packages for Ubuntu 24.04
+    # Install CLI using system pip
     python3 -m pip install --break-system-packages git+https://github.com/sjacorg/bayanat-cli.git --force-reinstall >/dev/null 2>&1
     
-    # Find CLI path more reliably
-    CLI_PATH=$(find /usr/local/bin /usr/bin ~/.local/bin -name "bayanat" 2>/dev/null | head -1)
+    # Find CLI path using Python module location
+    CLI_PATH=$(python3 -c "
+import sys
+import os
+try:
+    import bayanat_cli
+    module_path = bayanat_cli.__file__
+    bin_path = os.path.join(sys.prefix, 'bin', 'bayanat')
+    if os.path.exists(bin_path):
+        print(bin_path)
+    else:
+        # Try local bin
+        local_bin = os.path.join(os.path.expanduser('~'), '.local', 'bin', 'bayanat')
+        if os.path.exists(local_bin):
+            print(local_bin)
+except ImportError:
+    pass
+" 2>/dev/null)
     
-    if [ -z "$CLI_PATH" ]; then
-        # Try to find in Python installation
-        CLI_PATH=$(python3 -c "import sys; print(f'{sys.prefix}/bin/bayanat')" 2>/dev/null)
-    fi
-    
-    # Create global symlink if found
-    if [ -f "$CLI_PATH" ]; then
+    # Create global symlink
+    if [ -n "$CLI_PATH" ] && [ -f "$CLI_PATH" ]; then
         ln -sf "$CLI_PATH" /usr/local/bin/bayanat
         chmod +x /usr/local/bin/bayanat
         log "CLI symlinked from: $CLI_PATH"
