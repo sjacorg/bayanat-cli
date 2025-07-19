@@ -109,16 +109,27 @@ function createEnvironmentConfig(appDir) {
       return;
     }
 
-    // Try to use Bayanat's gen-env.sh script first
+    // Use Bayanat's gen-env.sh script for proper secrets
     try {
       runCommand('./gen-env.sh -n -o', { cwd: appDir, silent: true });
-      console.log('✅ Environment generated using gen-env.sh');
+      console.log('✅ Environment generated with proper secrets');
+      
+      // Append database and Redis configuration
+      const dbConfig = `
+# Database (convention-based)
+DATABASE_URL=postgresql://bayanat@localhost/bayanat
+
+# Redis
+REDIS_URL=redis://localhost:6379/0
+`;
+      fs.appendFileSync(envPath, dbConfig);
+      console.log('✅ Database configuration added');
+      
     } catch {
-      // Fallback to basic configuration
+      // Fallback if gen-env.sh doesn't exist
       console.log('📝 Creating basic environment configuration...');
       
-      const envContent = `# Bayanat Configuration
-FLASK_APP=run.py
+      const envContent = `FLASK_APP=run.py
 FLASK_DEBUG=0
 
 # Database (convention-based)
@@ -138,8 +149,9 @@ SECURITY_TWO_FACTOR=True
       console.log('✅ Basic environment configuration created');
     }
     
-    // Set proper permissions
+    // Set proper permissions and ownership
     runCommand(`chmod 640 ${envPath}`);
+    runCommand(`chown bayanat:bayanat ${envPath}`);
     
   } catch (error) {
     console.log('⚠️  Could not create environment file:', error.message);
