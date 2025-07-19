@@ -64,6 +64,14 @@ setup_users() {
     mkdir -p /var/lib/bayanat
     chown bayanat:bayanat /var/lib/bayanat
     chmod 755 /var/lib/bayanat
+    
+    # Configure sudo permissions for bayanat to restart services only
+    cat > /etc/sudoers.d/bayanat-services << 'EOF'
+# Allow bayanat user to restart only bayanat services without password
+bayanat ALL=(ALL) NOPASSWD: /bin/systemctl restart bayanat, /bin/systemctl restart bayanat-celery, /bin/systemctl status bayanat, /bin/systemctl status bayanat-celery
+EOF
+    chmod 440 /etc/sudoers.d/bayanat-services
+    log "Configured service restart permissions for bayanat user"
 }
 
 # Setup database with trust authentication
@@ -104,25 +112,11 @@ EOF
 install_cli() {
     log "Installing Bayanat CLI..."
     
-    # Install CLI package
+    # Install CLI package - Python packaging will automatically create the 'bayanat' command
     python3 -m pip install --break-system-packages git+https://github.com/sjacorg/bayanat-cli.git --force-reinstall
     
-    # Ensure CLI is accessible system-wide
-    if ! command -v bayanat >/dev/null 2>&1; then
-        # Create system-wide CLI wrapper
-        cat > /usr/local/bin/bayanat << 'EOF'
-#! /usr/bin/env python3
-import sys
-from bayanat_cli.main import main
-if __name__ == "__main__":
-    sys.exit(main())
-EOF
-        chmod +x /usr/local/bin/bayanat
-        log "Created CLI at /usr/local/bin/bayanat"
-    fi
-    
     # Verify installation
-    command -v bayanat >/dev/null || error "CLI installation failed"
+    command -v bayanat >/dev/null || error "CLI installation failed. Check if pyproject.toml has proper console script configuration."
     success "CLI installed: $(command -v bayanat)"
 }
 
