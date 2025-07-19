@@ -158,32 +158,25 @@ program
         process.exit(1);
       }
       
-      // Create app subdirectory for clean separation
-      const bayanatDir = path.join(appDir, 'app');
-      if (!fs.existsSync(bayanatDir)) {
-        fs.mkdirSync(bayanatDir, { recursive: true });
-      }
-      
-      // Clone repository
+      // Clone repository directly to current directory
       console.log('📦 Cloning Bayanat repository...');
-      runCommand(`git clone ${BAYANAT_REPO_URL} ${bayanatDir}`);
+      runCommand(`git clone ${BAYANAT_REPO_URL} .`);
       
       // Create virtual environment
       console.log('🐍 Setting up Python environment...');
-      runCommand(`python3 -m venv ${path.join(bayanatDir, 'env')}`);
+      runCommand(`python3 -m venv ${path.join(appDir, 'env')}`);
       
       // Install dependencies
       console.log('📚 Installing dependencies...');
-      const pipPath = path.join(bayanatDir, 'env', 'bin', 'pip');
+      const pipPath = path.join(appDir, 'env', 'bin', 'pip');
       runCommand(`${pipPath} install --upgrade pip`);
-      runCommand(`${pipPath} install -r ${path.join(bayanatDir, 'requirements', 'main.txt')}`);
+      runCommand(`${pipPath} install -r ${path.join(appDir, 'requirements', 'main.txt')}`);
       
       // Create CLI metadata with conventions
       const metadata = {
         version: '0.1.0',
         installed_at: new Date().toISOString(),
         installation_type: 'production',
-        app_directory: 'app',
         database_url: 'postgresql://bayanat@localhost/bayanat'
       };
       fs.writeFileSync(path.join(appDir, '.bayanat-cli'), JSON.stringify(metadata, null, 2));
@@ -208,21 +201,20 @@ program
     if (!checkUserPermissions('update')) process.exit(1);
     
     const appDir = process.cwd();
-    const bayanatDir = path.join(appDir, 'app');
     
     try {
       console.log('🔄 Updating Bayanat...');
       
       if (!options.skipGit) {
         console.log('📦 Fetching latest code...');
-        runCommand('git fetch', { cwd: bayanatDir });
-        runCommand('git pull', { cwd: bayanatDir });
+        runCommand('git fetch', { cwd: appDir });
+        runCommand('git pull', { cwd: appDir });
       }
       
       if (!options.skipDeps) {
         console.log('📚 Installing dependencies...');
-        const pipPath = path.join(bayanatDir, 'env', 'bin', 'pip');
-        runCommand(`${pipPath} install -r ${path.join(bayanatDir, 'requirements', 'main.txt')}`);
+        const pipPath = path.join(appDir, 'env', 'bin', 'pip');
+        runCommand(`${pipPath} install -r ${path.join(appDir, 'requirements', 'main.txt')}`);
       }
       
       if (!options.skipRestart) {

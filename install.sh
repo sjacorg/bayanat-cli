@@ -46,7 +46,7 @@ setup_users() {
     
     # Create non-privileged bayanat user (service account)
     if ! id bayanat >/dev/null 2>&1; then
-        useradd --system --home-dir /var/lib/bayanat --create-home --shell /bin/bash bayanat
+        useradd --system --home-dir /home/bayanat --create-home --shell /bin/bash bayanat
         log "Created bayanat system user"
     fi
     
@@ -60,10 +60,10 @@ setup_users() {
         usermod -aG sudo ubuntu 2>/dev/null || true
     fi
     
-    # Create bayanat working directory with proper permissions
-    mkdir -p /var/lib/bayanat
-    chown bayanat:bayanat /var/lib/bayanat
-    chmod 755 /var/lib/bayanat
+    # Create bayanat application directory with proper permissions
+    mkdir -p /opt/bayanat
+    chown bayanat:bayanat /opt/bayanat
+    chmod 755 /opt/bayanat
     
     # Configure sudo permissions for bayanat to restart services only
     cat > /etc/sudoers.d/bayanat-services << 'EOF'
@@ -135,7 +135,7 @@ show_completion() {
     echo "     sudo su - bayanat"
     echo ""
     echo "  2. Create your project:"
-    echo "     cd /var/lib/bayanat"
+    echo "     cd /opt/bayanat"
     echo "     bayanat install"
     echo ""
     echo "  3. Manage services (as ubuntu/sudo):"
