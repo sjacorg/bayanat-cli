@@ -35,24 +35,6 @@ setup_services() {
     # PostgreSQL
     systemctl enable --quiet postgresql && systemctl start postgresql
     
-    # Generate secure random password for database
-    DB_PASSWORD=$(openssl rand -base64 32)
-    echo "Generated secure database password"
-    
-    # Create database user and database
-    sudo -u postgres psql -c "CREATE USER bayanat WITH PASSWORD '$DB_PASSWORD';" 2>/dev/null || true
-    sudo -u postgres psql -c "CREATE DATABASE bayanat OWNER bayanat;" 2>/dev/null || true
-    sudo -u postgres psql -d bayanat -c "CREATE EXTENSION IF NOT EXISTS postgis;" 2>/dev/null || true
-    
-    # Save database credentials for user reference
-    cat > /var/lib/bayanat/.db_credentials << EOF
-# Database credentials (keep secure)
-DB_PASSWORD=$DB_PASSWORD
-DB_CONNECTION=postgresql://bayanat:$DB_PASSWORD@localhost/bayanat
-EOF
-    chown bayanat:bayanat /var/lib/bayanat/.db_credentials
-    chmod 600 /var/lib/bayanat/.db_credentials
-    
     # Redis & Nginx
     systemctl enable --quiet redis-server && systemctl start redis-server
     systemctl enable --quiet nginx
@@ -82,6 +64,37 @@ setup_users() {
     mkdir -p /var/lib/bayanat
     chown bayanat:bayanat /var/lib/bayanat
     chmod 755 /var/lib/bayanat
+}
+
+# Setup database with trust authentication
+setup_database() {
+    log "Configuring database..."
+    
+    # Create database user and database (no password needed for local connections)
+    sudo -u postgres psql -c "CREATE USER bayanat;" 2>/dev/null || true
+    sudo -u postgres psql -c "CREATE DATABASE bayanat OWNER bayanat;" 2>/dev/null || true
+    sudo -u postgres psql -d bayanat -c "CREATE EXTENSION IF NOT EXISTS postgis;" 2>/dev/null || true
+    
+    # Configure PostgreSQL for local trust authentication
+    PG_VERSION=$(sudo -u postgres psql -t -c "SELECT version();" | grep -oP '\d+\.\d+' | head -1)
+    PG_CONFIG="/etc/postgresql/$PG_VERSION/main/pg_hba.conf"
+    
+    # Add trust authentication for bayanat user
+    if ! grep -q "local.*bayanat.*trust" "$PG_CONFIG"; then
+        sed -i '/^local.*all.*postgres.*peer/a local   all             bayanat                                 trust' "$PG_CONFIG"
+        systemctl reload postgresql
+        log "Configured PostgreSQL trust authentication for bayanat user"
+    fi
+    
+    # Save simple connection info
+    cat > /var/lib/bayanat/.db_info << EOF
+# Database connection info
+DB_USER=bayanat
+DB_NAME=bayanat
+DB_CONNECTION=postgresql://bayanat@localhost/bayanat
+EOF
+    chown bayanat:bayanat /var/lib/bayanat/.db_info
+    chmod 644 /var/lib/bayanat/.db_info
 }
 
 # Install CLI globally
@@ -130,8 +143,8 @@ show_completion() {
     echo "  3. Manage services (as ubuntu/sudo):"
     echo "     sudo systemctl status bayanat"
     echo ""
-    echo "Database credentials saved to:"
-    echo "     /var/lib/bayanat/.db_credentials"
+    echo "Database info saved to:"
+    echo "     /var/lib/bayanat/.db_info"
     echo ""
     echo "For help: bayanat --help"
 }
@@ -143,6 +156,7 @@ main() {
     install_packages
     setup_services
     setup_users
+    setup_database
     install_cli
     show_completion
 }
