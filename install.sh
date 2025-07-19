@@ -50,25 +50,15 @@ setup_users() {
         log "Created bayanat system user"
     fi
     
-    # Ensure ubuntu user exists with admin privileges (if not already present)
-    if ! id ubuntu >/dev/null 2>&1; then
-        useradd -m -s /bin/bash ubuntu
-        usermod -aG sudo ubuntu
-        log "Created ubuntu admin user"
-    else
-        # Ensure ubuntu has sudo access
-        usermod -aG sudo ubuntu 2>/dev/null || true
-    fi
-    
     # Create bayanat application directory with proper permissions
     mkdir -p /opt/bayanat
     chown bayanat:bayanat /opt/bayanat
     chmod 755 /opt/bayanat
     
-    # Configure sudo permissions for bayanat to restart services only
+    # Configure sudo permissions for bayanat to manage services
     cat > /etc/sudoers.d/bayanat-services << 'EOF'
-# Allow bayanat user to restart only bayanat services without password
-bayanat ALL=(ALL) NOPASSWD: /bin/systemctl restart bayanat, /bin/systemctl restart bayanat-celery, /bin/systemctl status bayanat, /bin/systemctl status bayanat-celery
+# Allow bayanat user to manage systemd services without password
+bayanat ALL=(ALL) NOPASSWD: /bin/systemctl restart bayanat, /bin/systemctl restart bayanat-celery, /bin/systemctl status bayanat, /bin/systemctl status bayanat-celery, /bin/systemctl start bayanat, /bin/systemctl start bayanat-celery, /bin/systemctl stop bayanat, /bin/systemctl stop bayanat-celery
 EOF
     chmod 440 /etc/sudoers.d/bayanat-services
     log "Configured service restart permissions for bayanat user"
@@ -127,8 +117,8 @@ show_completion() {
     success "🎉 Bayanat CLI installation complete!"
     echo ""
     echo "Security Model:"
-    echo "  • ubuntu user: Administrative tasks, service management"
-    echo "  • bayanat user: Runs applications, owns code"
+    echo "  • Current admin user: System administration, service management"
+    echo "  • bayanat user: Runs applications, owns code, can restart services"
     echo ""
     echo "Next Steps:"
     echo "  1. Switch to bayanat user:"
@@ -138,8 +128,9 @@ show_completion() {
     echo "     cd /opt/bayanat"
     echo "     bayanat install"
     echo ""
-    echo "  3. Manage services (as ubuntu/sudo):"
-    echo "     sudo systemctl status bayanat"
+    echo "  3. Manage services (as admin or bayanat user):"
+    echo "     systemctl status bayanat      # As admin user"
+    echo "     bayanat restart               # As bayanat user"
     echo ""
     echo "Database connection (convention-based):"
     echo "     postgresql://bayanat@localhost/bayanat"

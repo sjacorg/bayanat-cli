@@ -30,25 +30,26 @@ This automatically installs:
 
 ### Production Architecture
 
-The CLI implements a secure two-user architecture designed for production environments:
+The CLI implements a secure user separation designed for production environments:
 
-- **System user separation**: `bayanat` user runs services without sudo privileges
-- **Administrative control**: `ubuntu` user manages systemd services
-- **Secure working directory**: `/var/lib/bayanat` with proper permissions
-- **CLI global access**: Available system-wide at `/usr/local/bin/bayanat`
+- **Service account**: `bayanat` user runs applications and can restart services
+- **Administrative control**: Existing admin user (root, ec2-user, etc.) manages system
+- **Secure working directory**: `/opt/bayanat` with proper permissions
+- **CLI global access**: Available system-wide via npm global installation
 
 ### Service Management
 
 ```bash
-# Administrative tasks (as ubuntu user with sudo)
-sudo systemctl status bayanat
-sudo systemctl restart bayanat
-sudo journalctl -u bayanat -f
+# Administrative tasks (as admin user)
+systemctl status bayanat
+systemctl restart bayanat
+journalctl -u bayanat -f
 
 # Application tasks (as bayanat user)
 sudo su - bayanat
 bayanat install
-bayanat backup
+bayanat update
+bayanat restart    # bayanat user can restart services directly
 ```
 
 ## Usage
@@ -59,8 +60,8 @@ bayanat backup
 # Switch to service user
 sudo su - bayanat
 
-# Navigate to secure directory
-cd /var/lib/bayanat
+# Navigate to application directory
+cd /opt/bayanat
 
 # Install Bayanat application
 bayanat install
@@ -73,7 +74,7 @@ bayanat install
 sudo su - bayanat
 
 # Navigate to installation directory
-cd /var/lib/bayanat
+cd /opt/bayanat
 
 # Update application
 bayanat update
