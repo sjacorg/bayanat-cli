@@ -7,7 +7,7 @@ A command-line interface tool for installing and managing Bayanat applications. 
 - **One-command installation** - Complete system setup with a single curl command
 - **Application management** - Install, update, backup, and restore Bayanat applications
 - **Automatic dependencies** - Handles system packages, database setup, and services
-- **Current directory approach** - Works like modern CLI tools (Docker, npm, etc.)
+- **Production-ready security** - Enterprise-grade security model with user separation
 
 ## Installation
 
@@ -18,20 +18,49 @@ curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/master/install.
 ```
 
 This automatically installs:
-- All system dependencies (PostgreSQL, Redis, nginx, build tools)
-- Bayanat CLI tool 
-- Database and user setup
-- Required services configuration
+- All system dependencies (PostgreSQL, Redis, nginx, Node.js)
+- Bayanat CLI tool (Node.js) with global access via npm
+- Secure two-user architecture for production deployments
+- Database and services configuration with secure credentials
+- systemd security hardening
 
 **Supported Systems:** Ubuntu 20.04+, Debian 11+
+
+## Security Model
+
+### Production Architecture
+
+The CLI implements a secure two-user architecture designed for production environments:
+
+- **System user separation**: `bayanat` user runs services without sudo privileges
+- **Administrative control**: `ubuntu` user manages systemd services
+- **Secure working directory**: `/var/lib/bayanat` with proper permissions
+- **CLI global access**: Available system-wide at `/usr/local/bin/bayanat`
+
+### Service Management
+
+```bash
+# Administrative tasks (as ubuntu user with sudo)
+sudo systemctl status bayanat
+sudo systemctl restart bayanat
+sudo journalctl -u bayanat -f
+
+# Application tasks (as bayanat user)
+sudo su - bayanat
+bayanat install
+bayanat backup
+```
 
 ## Usage
 
 ### Install Bayanat Application
 
 ```bash
-# Create project directory
-mkdir -p /opt/myproject && cd /opt/myproject
+# Switch to service user
+sudo su - bayanat
+
+# Navigate to secure directory
+cd /var/lib/bayanat
 
 # Install Bayanat application
 bayanat install
@@ -40,7 +69,13 @@ bayanat install
 ### Update Existing Installation
 
 ```bash
-cd /path/to/your/bayanat/project
+# Switch to service user
+sudo su - bayanat
+
+# Navigate to installation directory
+cd /var/lib/bayanat
+
+# Update application
 bayanat update
 ```
 
@@ -101,31 +136,82 @@ The installer automatically handles all system requirements:
 - PostgreSQL 14+ with PostGIS extension
 - Redis server
 - nginx web server
+- Node.js LTS (for CLI)
 - Python 3.8+ with development headers
 - Build tools (gcc, make, etc.)
 - Media processing tools (ffmpeg, exiftool)
 
 ## Architecture
 
-The CLI uses a **separation of concerns** approach:
+### Security-First Design
 
-1. **Shell installer** (`install.sh`) - Handles system setup once
-2. **Python CLI** (`bayanat`) - Manages Bayanat applications
+The CLI implements enterprise-grade security with a two-user architecture:
 
-This design provides:
-- **Simple user experience** - One command does everything
-- **Reliable installation** - Handles system variations
-- **Easy maintenance** - Clear separation between system and app logic
+| User | Purpose | Privileges | Usage |
+|------|---------|------------|-------|
+| `ubuntu` | Administrative | sudo access | `sudo systemctl restart bayanat` |
+| `bayanat` | Service account | none | Runs applications, owns code |
+
+### Component Separation
+
+1. **Shell installer** (`install.sh`) - One-time system setup with security hardening
+2. **Node.js CLI** (`bayanat`) - Application management without elevated privileges
+
+### Security Features
+
+- **Principle of least privilege** - Services run as non-privileged users
+- **Defense in depth** - Multiple security layers
+- **Production-ready deployment** - Secure by default configuration
+- **systemd security hardening** - Modern container-style isolation
+
+### systemd Security Template
+
+The CLI configures services with hardened security settings:
+
+```ini
+[Unit]
+Description=Bayanat Application
+After=network.target postgresql.service redis.service
+
+[Service]
+User=bayanat
+Group=bayanat
+WorkingDirectory=/var/lib/bayanat
+EnvironmentFile=/var/lib/bayanat/.env
+
+# Security Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/bayanat
+RestrictAddressFamilies=AF_INET AF_INET6
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+LockPersonality=yes
+
+# Process Management
+ExecStart=/var/lib/bayanat/env/bin/uwsgi --ini uwsgi.ini
+Restart=always
+RestartSec=3
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target
+```
 
 ## Development
 
-To contribute to the CLI:
+To contribute to the CLI development:
 
 ```bash
 git clone https://github.com/sjacorg/bayanat-cli.git
 cd bayanat-cli
-pip install -e .
+npm install
+npm link  # Links for local development testing
 ```
+
+For production use, the CLI is installed globally via the installer script.
 
 ## License
 

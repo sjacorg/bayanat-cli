@@ -1,0 +1,20 @@
+{
+  "name": "bayanat-cli",
+  "version": "0.1.0",
+  "description": "CLI tool for Bayanat data management system",
+  "bin": {
+    "bayanat": "bin/bayanat.js"
+  },
+  "author": "SJAC <tech@syriaaccountability.org>",
+  "license": "AGPL-3.0",
+  "dependencies": {
+    "commander": "^11.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sjacorg/bayanat-cli.git"
+  }
+}

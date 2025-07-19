@@ -112,12 +112,20 @@ EOF
 install_cli() {
     log "Installing Bayanat CLI..."
     
-    # Install CLI package - Python packaging will automatically create the 'bayanat' command
-    python3 -m pip install --break-system-packages git+https://github.com/sjacorg/bayanat-cli.git --force-reinstall
+    # Install Node.js if not present
+    if ! command -v node >/dev/null; then
+        curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
+        apt install -y nodejs
+    fi
+    
+    # Install CLI package using npm
+    npm install -g git+https://github.com/sjacorg/bayanat-cli.git
     
     # Verify installation
-    command -v bayanat >/dev/null || error "CLI installation failed. Check if pyproject.toml has proper console script configuration."
-    success "CLI installed: $(command -v bayanat)"
+    command -v bayanat >/dev/null || error "CLI installation failed. npm global install did not work."
+    CLI_PATH=$(command -v bayanat)
+    
+    success "CLI installed: $CLI_PATH"
 }
 
 # Display completion message
