@@ -6,6 +6,7 @@ echo "=========================="
 
 log() { echo "[INFO] $1"; }
 error() { echo "[ERROR] $1"; exit 1; }
+success() { echo "[SUCCESS] $1"; }
 
 # Check system requirements
 check_system() {
@@ -15,9 +16,9 @@ check_system() {
     log "System checks passed"
 }
 
-# Install everything needed
+# Install system packages
 install_packages() {
-    log "Installing packages..."
+    log "Installing system packages..."
     export DEBIAN_FRONTEND=noninteractive
     apt update -qq
     apt install -y -qq \
@@ -27,95 +28,123 @@ install_packages() {
         libjpeg-dev libzip-dev libimage-exiftool-perl ffmpeg curl wget
 }
 
-# Setup services
+# Setup system services
 setup_services() {
-    log "Configuring services..."
+    log "Configuring system services..."
     
     # PostgreSQL
     systemctl enable --quiet postgresql && systemctl start postgresql
-    sudo -u postgres psql -c "CREATE USER bayanat WITH PASSWORD 'bayanat_password';" 2>/dev/null || true
+    
+    # Generate secure random password for database
+    DB_PASSWORD=$(openssl rand -base64 32)
+    echo "Generated secure database password"
+    
+    # Create database user and database
+    sudo -u postgres psql -c "CREATE USER bayanat WITH PASSWORD '$DB_PASSWORD';" 2>/dev/null || true
     sudo -u postgres psql -c "CREATE DATABASE bayanat OWNER bayanat;" 2>/dev/null || true
     sudo -u postgres psql -d bayanat -c "CREATE EXTENSION IF NOT EXISTS postgis;" 2>/dev/null || true
+    
+    # Save database credentials for user reference
+    cat > /var/lib/bayanat/.db_credentials << EOF
+# Database credentials (keep secure)
+DB_PASSWORD=$DB_PASSWORD
+DB_CONNECTION=postgresql://bayanat:$DB_PASSWORD@localhost/bayanat
+EOF
+    chown bayanat:bayanat /var/lib/bayanat/.db_credentials
+    chmod 600 /var/lib/bayanat/.db_credentials
     
     # Redis & Nginx
     systemctl enable --quiet redis-server && systemctl start redis-server
     systemctl enable --quiet nginx
 }
 
-# Create user (if root)
-setup_user() {
-    [ "$EUID" -eq 0 ] || return 0
-    log "Creating bayanat user..."
+# Create users with proper security model
+setup_users() {
+    log "Setting up user accounts..."
     
-    id bayanat >/dev/null 2>&1 || useradd -m -s /bin/bash bayanat
-    usermod -aG sudo bayanat
-    echo 'bayanat ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/bayanat
-    chmod 440 /etc/sudoers.d/bayanat
+    # Create non-privileged bayanat user (service account)
+    if ! id bayanat >/dev/null 2>&1; then
+        useradd --system --home-dir /var/lib/bayanat --create-home --shell /bin/bash bayanat
+        log "Created bayanat system user"
+    fi
+    
+    # Ensure ubuntu user exists with admin privileges (if not already present)
+    if ! id ubuntu >/dev/null 2>&1; then
+        useradd -m -s /bin/bash ubuntu
+        usermod -aG sudo ubuntu
+        log "Created ubuntu admin user"
+    else
+        # Ensure ubuntu has sudo access
+        usermod -aG sudo ubuntu 2>/dev/null || true
+    fi
+    
+    # Create bayanat working directory with proper permissions
+    mkdir -p /var/lib/bayanat
+    chown bayanat:bayanat /var/lib/bayanat
+    chmod 755 /var/lib/bayanat
 }
 
-# Install CLI
+# Install CLI globally
 install_cli() {
-    log "Installing CLI..."
+    log "Installing Bayanat CLI..."
     
-    # Install CLI using system pip
+    # Install CLI package
     python3 -m pip install --break-system-packages git+https://github.com/sjacorg/bayanat-cli.git --force-reinstall
     
-    # Find CLI path - check common locations
-    CLI_PATH=""
-    for path in "/usr/local/bin/bayanat" "/usr/bin/bayanat" "$HOME/.local/bin/bayanat"; do
-        if [ -f "$path" ]; then
-            CLI_PATH="$path"
-            break
-        fi
-    done
-    
-    # If not found, create it manually
-    if [ -z "$CLI_PATH" ]; then
-        # Create a simple wrapper script
+    # Ensure CLI is accessible system-wide
+    if ! command -v bayanat >/dev/null 2>&1; then
+        # Create system-wide CLI wrapper
         cat > /usr/local/bin/bayanat << 'EOF'
 #!/usr/bin/env python3
 import sys
 from bayanat_cli.main import main
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
 EOF
         chmod +x /usr/local/bin/bayanat
-        CLI_PATH="/usr/local/bin/bayanat"
-        log "Created CLI wrapper: $CLI_PATH"
-    else
-        # Create symlink to existing binary
-        ln -sf "$CLI_PATH" /usr/local/bin/bayanat
-        log "CLI symlinked from: $CLI_PATH"
+        log "Created CLI at /usr/local/bin/bayanat"
     fi
     
     # Verify installation
-    command -v bayanat >/dev/null || error "CLI installation failed - not in PATH"
-    log "CLI ready: $(command -v bayanat)"
+    command -v bayanat >/dev/null || error "CLI installation failed"
+    success "CLI installed: $(command -v bayanat)"
 }
 
-# Main
-main() {
-    log "Starting installation..."
-    check_system
-    install_packages  
-    setup_services
-    setup_user
-    install_cli
-    
+# Display completion message
+show_completion() {
     echo ""
-    log "🎉 Installation complete!"
+    success "🎉 Bayanat CLI installation complete!"
     echo ""
-    echo "Next steps:"
+    echo "Security Model:"
+    echo "  • ubuntu user: Administrative tasks, service management"
+    echo "  • bayanat user: Runs applications, owns code"
+    echo ""
+    echo "Next Steps:"
     echo "  1. Switch to bayanat user:"
     echo "     sudo su - bayanat"
     echo ""
-    echo "  2. Create project directory:"
-    echo "     mkdir /opt/myproject && cd /opt/myproject"
-    echo ""
-    echo "  3. Install Bayanat application:"
+    echo "  2. Create your project:"
+    echo "     cd /var/lib/bayanat"
     echo "     bayanat install"
     echo ""
+    echo "  3. Manage services (as ubuntu/sudo):"
+    echo "     sudo systemctl status bayanat"
+    echo ""
+    echo "Database credentials saved to:"
+    echo "     /var/lib/bayanat/.db_credentials"
+    echo ""
     echo "For help: bayanat --help"
+}
+
+# Main installation flow
+main() {
+    log "Starting Bayanat CLI installation..."
+    check_system
+    install_packages
+    setup_services
+    setup_users
+    install_cli
+    show_completion
 }
 
 main "$@"
