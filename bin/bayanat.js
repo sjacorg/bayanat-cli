@@ -51,9 +51,10 @@ function runCommand(command, options = {}) {
 function checkUserPermissions(command) {
   const user = getCurrentUser();
   
-  if (command === 'install' && !user.isAdminUser) {
-    console.error('❌ Installation requires admin privileges');
-    console.error('Please run as root or with sudo access');
+  // App installation can be run by bayanat user in their directory
+  if (command === 'install' && !user.isAdminUser && !user.isBayanatUser) {
+    console.error('❌ Application installation requires admin or bayanat user privileges');
+    console.error('Please run as root, admin user, or switch to bayanat user: sudo su - bayanat');
     return false;
   }
   
