@@ -5,7 +5,7 @@ A command-line interface tool for installing and managing Bayanat applications. 
 ## Features
 
 - **One-command installation** - Complete system setup with a single curl command
-- **Application management** - Install, update, backup, and restore Bayanat applications
+- **One-command app setup** - Install, configure, and start with `bayanat install`
 - **Automatic dependencies** - Handles system packages, database setup, and services
 - **Production-ready security** - Enterprise-grade security model with user separation
 
@@ -63,9 +63,17 @@ sudo su - bayanat
 # Navigate to application directory
 cd /opt/bayanat
 
-# Install Bayanat application
+# Complete setup (one command does everything)
 bayanat install
 ```
+
+**What `bayanat install` does:**
+- Clones Bayanat repository
+- Creates Python virtual environment
+- Installs all dependencies
+- Generates environment configuration
+- Creates and starts systemd services
+- Shows service status
 
 ### Update Existing Installation
 
@@ -104,8 +112,9 @@ bayanat --help
 
 | Command | Description |
 |---------|-------------|
-| `install` | Install Bayanat application in current directory |
+| `install` | Complete setup: install app + configure services + start services |
 | `update` | Update existing Bayanat application |
+| `restart` | Restart Bayanat services |
 | `backup` | Create database backup |
 | `restore` | Restore database from backup |
 | `version` | Display version information |
