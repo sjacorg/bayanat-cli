@@ -110,13 +110,13 @@ install_cli() {
     # Ensure CLI is accessible system-wide
     if ! command -v bayanat >/dev/null 2>&1; then
         # Create system-wide CLI wrapper
-        cat > /usr/local/bin/bayanat << 'EOF'
+        cat > /usr/local/bin/bayanat << 'SCRIPT'
 #!/usr/bin/env python3
 import sys
 from bayanat_cli.main import main
 if __name__ == "__main__":
     sys.exit(main())
-EOF
+SCRIPT
         chmod +x /usr/local/bin/bayanat
         log "Created CLI at /usr/local/bin/bayanat"
     fi
