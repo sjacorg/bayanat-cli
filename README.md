@@ -150,8 +150,8 @@ The CLI implements enterprise-grade security with a two-user architecture:
 
 | User | Purpose | Privileges | Usage |
 |------|---------|------------|-------|
-| `ubuntu` | Administrative | sudo access | `sudo systemctl restart bayanat` |
-| `bayanat` | Service account | none | Runs applications, owns code |
+| Admin user | Administrative | sudo/root access | `systemctl restart bayanat` |
+| `bayanat` | Service account | service restart only | `bayanat restart` |
 
 ### Component Separation
 
@@ -177,22 +177,22 @@ After=network.target postgresql.service redis.service
 [Service]
 User=bayanat
 Group=bayanat
-WorkingDirectory=/var/lib/bayanat
-EnvironmentFile=/var/lib/bayanat/.env
+WorkingDirectory=/opt/bayanat
+EnvironmentFile=/opt/bayanat/.env
 
 # Security Hardening
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/var/lib/bayanat
+ReadWritePaths=/opt/bayanat
 RestrictAddressFamilies=AF_INET AF_INET6
 MemoryDenyWriteExecute=yes
 RestrictRealtime=yes
 LockPersonality=yes
 
 # Process Management
-ExecStart=/var/lib/bayanat/env/bin/uwsgi --ini uwsgi.ini
+ExecStart=/opt/bayanat/env/bin/uwsgi --ini uwsgi.ini
 Restart=always
 RestartSec=3
 StartLimitIntervalSec=0

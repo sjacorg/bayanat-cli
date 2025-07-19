@@ -100,6 +100,126 @@ function restartServices(serviceName = 'bayanat') {
   }
 }
 
+function createEnvironmentConfig(appDir) {
+  try {
+    // Check if .env already exists
+    const envPath = path.join(appDir, '.env');
+    if (fs.existsSync(envPath)) {
+      console.log('✅ Environment file already exists');
+      return;
+    }
+
+    // Try to use Bayanat's gen-env.sh script first
+    try {
+      runCommand('./gen-env.sh -n -o', { cwd: appDir, silent: true });
+      console.log('✅ Environment generated using gen-env.sh');
+    } catch {
+      // Fallback to basic configuration
+      console.log('📝 Creating basic environment configuration...');
+      
+      const envContent = `# Bayanat Configuration
+FLASK_APP=run.py
+FLASK_DEBUG=0
+
+# Database (convention-based)
+DATABASE_URL=postgresql://bayanat@localhost/bayanat
+
+# Redis
+REDIS_URL=redis://localhost:6379/0
+
+# Security (generate your own keys for production)
+SECRET_KEY=change-this-in-production
+SECURITY_PASSWORD_SALT=change-this-in-production
+SECURITY_TOTP_SECRETS=change-this-in-production
+SECURITY_TWO_FACTOR=True
+`;
+      
+      fs.writeFileSync(envPath, envContent);
+      console.log('✅ Basic environment configuration created');
+    }
+    
+    // Set proper permissions
+    runCommand(`chmod 640 ${envPath}`);
+    
+  } catch (error) {
+    console.log('⚠️  Could not create environment file:', error.message);
+  }
+}
+
+function setupSystemdServices(appDir) {
+  try {
+    // Create main service file
+    const mainService = `[Unit]
+Description=Bayanat Application
+After=network.target postgresql.service redis.service
+
+[Service]
+User=bayanat
+Group=bayanat
+WorkingDirectory=${appDir}
+EnvironmentFile=${appDir}/.env
+ExecStart=${appDir}/env/bin/uwsgi --ini uwsgi.ini
+Restart=always
+RestartSec=3
+StartLimitIntervalSec=0
+
+# Security Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=${appDir}
+
+[Install]
+WantedBy=multi-user.target
+`;
+
+    // Create celery service file
+    const celeryService = `[Unit]
+Description=Bayanat Celery Service
+After=network.target redis.service
+
+[Service]
+User=bayanat
+Group=bayanat
+WorkingDirectory=${appDir}
+Environment="PATH=${appDir}/env/bin:/usr/bin"
+EnvironmentFile=${appDir}/.env
+ExecStart=${appDir}/env/bin/celery -A enferno.tasks worker --autoscale 2,5 -B
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+`;
+
+    // Write service files (requires admin privileges)
+    runCommand(`echo '${mainService}' | sudo tee /etc/systemd/system/bayanat.service > /dev/null`);
+    runCommand(`echo '${celeryService}' | sudo tee /etc/systemd/system/bayanat-celery.service > /dev/null`);
+    
+    // Enable and start services
+    runCommand('sudo systemctl daemon-reload');
+    runCommand('sudo systemctl enable bayanat bayanat-celery');
+    runCommand('sudo systemctl start bayanat bayanat-celery');
+    
+    console.log('✅ Systemd services created and started');
+    
+    // Show status
+    setTimeout(() => {
+      try {
+        console.log('\n📊 Service Status:');
+        runCommand('sudo systemctl status bayanat --no-pager -l', { silent: false });
+      } catch (error) {
+        console.log('⚠️  Check service status with: systemctl status bayanat');
+      }
+    }, 2000);
+    
+  } catch (error) {
+    console.log('⚠️  Could not auto-setup services (requires admin privileges)');
+    console.log('💡 Run as admin or manually create systemd services');
+  }
+}
+
 function showRoleBasedHelp() {
   const user = getCurrentUser();
   
@@ -172,6 +292,10 @@ program
       runCommand(`${pipPath} install --upgrade pip`);
       runCommand(`${pipPath} install -r ${path.join(appDir, 'requirements', 'main.txt')}`);
       
+      // Create environment configuration
+      console.log('📝 Creating environment configuration...');
+      createEnvironmentConfig(appDir);
+      
       // Create CLI metadata with conventions
       const metadata = {
         version: '0.1.0',
@@ -181,7 +305,12 @@ program
       };
       fs.writeFileSync(path.join(appDir, '.bayanat-cli'), JSON.stringify(metadata, null, 2));
       
+      // Auto-setup systemd services
+      console.log('⚙️  Setting up systemd services...');
+      setupSystemdServices(appDir);
+      
       console.log('🎉 Bayanat installation completed successfully!');
+      console.log('✅ Services are running and ready to use!');
       console.log(`Run 'bayanat update' from ${appDir} to update in the future.`);
       
     } catch (error) {
