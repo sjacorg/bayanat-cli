@@ -158,8 +158,8 @@ program
         process.exit(1);
       }
       
-      // Create bayanat subdirectory
-      const bayanatDir = path.join(appDir, 'bayanat');
+      // Create app subdirectory for clean separation
+      const bayanatDir = path.join(appDir, 'app');
       if (!fs.existsSync(bayanatDir)) {
         fs.mkdirSync(bayanatDir, { recursive: true });
       }
@@ -178,11 +178,13 @@ program
       runCommand(`${pipPath} install --upgrade pip`);
       runCommand(`${pipPath} install -r ${path.join(bayanatDir, 'requirements', 'main.txt')}`);
       
-      // Create CLI metadata
+      // Create CLI metadata with conventions
       const metadata = {
         version: '0.1.0',
         installed_at: new Date().toISOString(),
-        installation_type: 'production'
+        installation_type: 'production',
+        app_directory: 'app',
+        database_url: 'postgresql://bayanat@localhost/bayanat'
       };
       fs.writeFileSync(path.join(appDir, '.bayanat-cli'), JSON.stringify(metadata, null, 2));
       
@@ -206,7 +208,7 @@ program
     if (!checkUserPermissions('update')) process.exit(1);
     
     const appDir = process.cwd();
-    const bayanatDir = path.join(appDir, 'bayanat');
+    const bayanatDir = path.join(appDir, 'app');
     
     try {
       console.log('🔄 Updating Bayanat...');

@@ -97,15 +97,8 @@ setup_database() {
         log "PostgreSQL config file not found - using default authentication"
     fi
     
-    # Save simple connection info
-    cat > /var/lib/bayanat/.db_info << EOF
-# Database connection info
-DB_USER=bayanat
-DB_NAME=bayanat
-DB_CONNECTION=postgresql://bayanat@localhost/bayanat
-EOF
-    chown bayanat:bayanat /var/lib/bayanat/.db_info
-    chmod 644 /var/lib/bayanat/.db_info
+    # Database connection uses convention: postgresql://bayanat@localhost/bayanat
+    log "Database configured with convention-based connection"
 }
 
 # Install CLI globally
@@ -148,8 +141,8 @@ show_completion() {
     echo "  3. Manage services (as ubuntu/sudo):"
     echo "     sudo systemctl status bayanat"
     echo ""
-    echo "Database info saved to:"
-    echo "     /var/lib/bayanat/.db_info"
+    echo "Database connection (convention-based):"
+    echo "     postgresql://bayanat@localhost/bayanat"
     echo ""
     echo "For help: bayanat --help"
 }
