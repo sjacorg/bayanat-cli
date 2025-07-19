@@ -76,14 +76,17 @@ setup_database() {
     sudo -u postgres psql -d bayanat -c "CREATE EXTENSION IF NOT EXISTS postgis;" 2>/dev/null || true
     
     # Configure PostgreSQL for local trust authentication
-    PG_VERSION=$(sudo -u postgres psql -t -c "SELECT version();" | grep -oP '\d+\.\d+' | head -1)
-    PG_CONFIG="/etc/postgresql/$PG_VERSION/main/pg_hba.conf"
+    PG_CONFIG=$(find /etc/postgresql -name pg_hba.conf | head -1)
     
     # Add trust authentication for bayanat user
-    if ! grep -q "local.*bayanat.*trust" "$PG_CONFIG"; then
-        sed -i '/^local.*all.*postgres.*peer/a local   all             bayanat                                 trust' "$PG_CONFIG"
-        systemctl reload postgresql
-        log "Configured PostgreSQL trust authentication for bayanat user"
+    if [ -f "$PG_CONFIG" ]; then
+        if ! grep -q "local.*bayanat.*trust" "$PG_CONFIG"; then
+            sed -i '/^local.*all.*postgres.*peer/a local   all             bayanat                                 trust' "$PG_CONFIG"
+            systemctl reload postgresql
+            log "Configured PostgreSQL trust authentication for bayanat user"
+        fi
+    else
+        log "PostgreSQL config file not found - using default authentication"
     fi
     
     # Save simple connection info
