@@ -149,9 +149,8 @@ SECURITY_TWO_FACTOR=True
       console.log('✅ Basic environment configuration created');
     }
     
-    // Set proper permissions and ownership
+    // Set proper permissions
     runCommand(`chmod 640 ${envPath}`);
-    runCommand(`chown bayanat:bayanat ${envPath}`);
     
   } catch (error) {
     console.log('⚠️  Could not create environment file:', error.message);
