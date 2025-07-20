@@ -55,10 +55,10 @@ setup_users() {
     chown bayanat:bayanat /opt/bayanat
     chmod 755 /opt/bayanat
     
-    # Configure sudo permissions for bayanat to manage services
+    # Configure sudo permissions for bayanat to manage services and setup
     cat > /etc/sudoers.d/bayanat-services << 'EOF'
-# Allow bayanat user to manage systemd services without password
-bayanat ALL=(ALL) NOPASSWD: /bin/systemctl restart bayanat, /bin/systemctl restart bayanat-celery, /bin/systemctl status bayanat, /bin/systemctl status bayanat-celery, /bin/systemctl start bayanat, /bin/systemctl start bayanat-celery, /bin/systemctl stop bayanat, /bin/systemctl stop bayanat-celery
+# Allow bayanat user to manage its own systemd services without password
+bayanat ALL=(ALL) NOPASSWD: /bin/systemctl restart bayanat*, /bin/systemctl status bayanat*, /bin/systemctl start bayanat*, /bin/systemctl stop bayanat*, /bin/systemctl enable bayanat*, /bin/systemctl daemon-reload, /bin/tee /etc/systemd/system/bayanat.service, /bin/tee /etc/systemd/system/bayanat-celery.service
 EOF
     chmod 440 /etc/sudoers.d/bayanat-services
     log "Configured service restart permissions for bayanat user"

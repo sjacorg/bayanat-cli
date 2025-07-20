@@ -32,24 +32,44 @@ This automatically installs:
 
 The CLI implements a secure user separation designed for production environments:
 
-- **Service account**: `bayanat` user runs applications and can restart services
+- **Service account**: `bayanat` user runs applications and manages its own services
 - **Administrative control**: Existing admin user (root, ec2-user, etc.) manages system
 - **Secure working directory**: `/opt/bayanat` with proper permissions
 - **CLI global access**: Available system-wide via npm global installation
+
+### Security Permissions
+
+The `bayanat` user has targeted sudo permissions following the **principle of least privilege**:
+
+**✅ Can do (bayanat services only):**
+- Create and manage bayanat systemd services
+- Start, stop, restart, and check status of bayanat services
+- Reload systemd daemon for bayanat services
+
+**❌ Cannot do:**
+- Install system packages or modify system configuration
+- Access other users' files or services
+- Manage non-bayanat services
+- Become root or access other user accounts
+
+This follows industry-standard patterns where service accounts manage their own services securely.
 
 ### Service Management
 
 ```bash
 # Administrative tasks (as admin user)
 systemctl status bayanat
-systemctl restart bayanat
 journalctl -u bayanat -f
 
-# Application tasks (as bayanat user)
+# Application tasks (as bayanat user) - ONE COMMAND SETUP
 sudo su - bayanat
-bayanat install
-bayanat update
-bayanat restart    # bayanat user can restart services directly
+cd /opt/bayanat
+bayanat install    # Installs app + creates + starts services automatically
+
+# Daily operations (as bayanat user)
+bayanat update     # Update application
+bayanat restart    # Restart services
+bayanat backup     # Create database backup
 ```
 
 ## Usage
