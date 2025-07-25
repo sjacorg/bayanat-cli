@@ -153,8 +153,8 @@ $DOMAIN {
     }
     
     # Security headers
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    header {$(if [[ ! "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "
+        Strict-Transport-Security \"max-age=31536000; includeSubDomains\""; fi)
         X-Content-Type-Options nosniff
         X-Frame-Options DENY
         X-XSS-Protection "1; mode=block"
@@ -194,6 +194,10 @@ EOF
     
     # Test configuration
     caddy validate --config /etc/caddy/Caddyfile || error "Invalid Caddy configuration"
+    
+    # Stop any existing caddy process and restart
+    systemctl stop caddy 2>/dev/null || true
+    systemctl start caddy || error "Failed to start Caddy"
     
     log "Caddy configured for $DOMAIN"
 }
