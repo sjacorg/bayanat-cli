@@ -19,7 +19,7 @@ One-command installer for Bayanat, a Flask-based human rights data management sy
 curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/master/install.sh | bash
 
 # With custom domain (automatic HTTPS)
-DOMAIN=your-domain.com curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/master/install.sh | bash
+export DOMAIN=your-domain.com && curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/master/install.sh | bash
 ```
 
 **What gets installed:**
