@@ -25,7 +25,7 @@ install_packages() {
         git postgresql postgresql-contrib postgis redis-server \
         python3 python3-pip python3-venv python3-dev build-essential \
         libpq-dev libxml2-dev libxslt1-dev libssl-dev libffi-dev \
-        libjpeg-dev libzip-dev libimage-exiftool-perl ffmpeg curl wget
+        libjpeg-dev libzip-dev libimage-exiftool-perl ffmpeg curl wget socat
 }
 
 # Install and setup Caddy web server
@@ -90,16 +90,23 @@ setup_users() {
 setup_daemon_permissions() {
     log "Setting up package daemon permissions..."
     
-    # Create sudoers file for package installation
+    # Create sudoers file for package installation and service management
     cat > /etc/sudoers.d/bayanat-daemon << 'EOF'
-# Package installation permissions for bayanat-daemon
+# Package installation and service management permissions for bayanat-daemon
 
 bayanat-daemon ALL=(ALL) NOPASSWD: \
     /usr/bin/apt update, \
     /usr/bin/apt install *, \
     /usr/bin/apt upgrade *, \
     /usr/bin/dpkg -l, \
-    /usr/bin/dpkg -s *
+    /usr/bin/dpkg -s *, \
+    /bin/systemctl restart bayanat, \
+    /bin/systemctl restart caddy, \
+    /bin/systemctl is-active bayanat, \
+    /bin/systemctl is-active caddy, \
+    /bin/systemctl is-enabled bayanat, \
+    /bin/systemctl is-enabled caddy, \
+    /usr/bin/sudo -u bayanat *
 EOF
 
     # Validate sudoers syntax
@@ -220,134 +227,77 @@ EOF
     log "Caddy configured for $DOMAIN"
 }
 
-# Install CLI
-install_cli() {
-    log "Installing Bayanat CLI..."
-    
-    # Install Node.js if not present
-    if ! command -v node >/dev/null; then
-        curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
-        apt-get install -y nodejs
-    fi
-    
-    # Install CLI package
-    npm install -g git+https://github.com/sjacorg/bayanat-cli.git
-    
-    # Verify installation
-    command -v bayanat >/dev/null || error "CLI installation failed"
-    
-    success "CLI installed: $(command -v bayanat)"
-}
+# Skip CLI installation - using direct HTTP daemon instead
 
 # Create privileged daemon
 create_daemon() {
     log "Creating privileged HTTP daemon..."
     
     # Copy daemon script
-    DAEMON_SCRIPT="/usr/local/bin/bayanat-daemon.js"
+    DAEMON_SCRIPT="/usr/local/bin/bayanat-daemon.sh"
     cat > "$DAEMON_SCRIPT" << 'EOF'
-#!/usr/bin/env node
+#!/bin/bash
 
-const http = require('http');
-const { execSync } = require('child_process');
-const fs = require('fs');
+LOG_FILE="/var/log/bayanat-daemon/operations.log"
 
-const PORT = 8080;
-const LOG_FILE = '/var/log/bayanat-daemon/operations.log';
+log() { echo "$(date -Iseconds) $*" | tee -a "$LOG_FILE"; }
 
-// Package validation
-const ALLOWED_PATTERNS = [
-  /^python3-.+/, /^postgresql-.+/, /^lib.+-dev$/, /^ffmpeg$/, 
-  /^exiftool$/, /^build-essential$/, /.+-common$/, /^redis-.+/, /^nginx-.+/
-];
-
-const BLOCKED_PATTERNS = [
-  /^ssh.*/, /^sudo.*/, /^systemd.*/, /.*backdoor.*/, /^netcat.*/
-];
-
-function log(operation, details = {}) {
-  const entry = { timestamp: new Date().toISOString(), operation, ...details };
-  console.log(`[${entry.timestamp}] ${operation}:`, details);
-  try {
-    fs.appendFileSync(LOG_FILE, JSON.stringify(entry) + '\n');
-  } catch (err) {
-    console.error('Log write failed:', err.message);
-  }
+handle_request() {
+    read -r method path protocol
+    while IFS= read -r line && [ "$line" != $'\r' ]; do :; done
+    read -r body
+    
+    service=$(echo "$body" | grep -o '"service":"[^"]*"' | cut -d'"' -f4)
+    package=$(echo "$body" | grep -o '"package":"[^"]*"' | cut -d'"' -f4)
+    
+    case "$path" in
+        "/restart-service")
+            if [[ "$service" =~ ^(bayanat|caddy)$ ]]; then
+                log "Restarting service: $service"
+                if sudo systemctl restart "$service" 2>/dev/null; then
+                    echo '{"success":true,"message":"Service restarted"}'
+                else
+                    echo '{"success":false,"error":"Restart failed"}'
+                fi
+            else
+                echo '{"success":false,"error":"Invalid service"}'
+            fi ;;
+        "/service-status")
+            if [[ "$service" =~ ^(bayanat|caddy)$ ]]; then
+                status=$(sudo systemctl is-active "$service" 2>/dev/null || echo "inactive")
+                enabled=$(sudo systemctl is-enabled "$service" 2>/dev/null || echo "disabled")
+                echo "{\"success\":true,\"service\":\"$service\",\"status\":\"$status\",\"enabled\":\"$enabled\"}"
+            else
+                echo '{"success":false,"error":"Invalid service"}'
+            fi ;;
+        "/install-package")
+            if [[ "$package" =~ ^(python3-|postgresql-|lib|ffmpeg|build-essential|redis-) ]]; then
+                log "Installing package: $package"
+                if sudo apt update -qq && sudo apt install -y "$package" 2>/dev/null; then
+                    echo '{"success":true,"message":"Package installed"}'
+                else
+                    echo '{"success":false,"error":"Install failed"}'
+                fi
+            else
+                echo '{"success":false,"error":"Invalid package"}'
+            fi ;;
+        "/update-bayanat")
+            log "Updating Bayanat application"
+            if cd /opt/bayanat && sudo -u bayanat git pull 2>/dev/null && sudo systemctl restart bayanat 2>/dev/null; then
+                echo '{"success":true,"message":"Bayanat updated and restarted"}'
+            else
+                echo '{"success":false,"error":"Update failed"}'
+            fi ;;
+        *) echo '{"success":false,"error":"Not found"}' ;;
+    esac
 }
 
-function validatePackage(pkg) {
-  if (BLOCKED_PATTERNS.some(p => p.test(pkg))) {
-    return { valid: false, reason: `Package '${pkg}' is blocked` };
-  }
-  if (ALLOWED_PATTERNS.some(p => p.test(pkg))) {
-    return { valid: true };
-  }
-  return { valid: false, reason: `Package '${pkg}' not allowed` };
-}
+log "Bayanat daemon starting on port 8080"
 
-function installPackage(pkg) {
-  const validation = validatePackage(pkg);
-  if (!validation.valid) {
-    log('package_rejected', { package: pkg, reason: validation.reason });
-    return { success: false, error: validation.reason };
-  }
-  
-  try {
-    log('package_install_start', { package: pkg });
-    // Run apt commands with sudo
-    execSync('sudo apt update -qq', { stdio: 'pipe' });
-    execSync(`sudo apt install -y ${pkg}`, { stdio: 'pipe' });
-    log('package_install_success', { package: pkg });
-    return { success: true, message: `Package '${pkg}' installed` };
-  } catch (error) {
-    log('package_install_error', { package: pkg, error: error.message });
-    return { success: false, error: `Install failed: ${error.message}` };
-  }
-}
-
-const server = http.createServer((req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', 'http://localhost');
-  res.setHeader('Content-Type', 'application/json');
-  
-  if (req.method === 'OPTIONS') {
-    res.writeHead(200);
-    res.end();
-    return;
-  }
-  
-  if (req.method !== 'POST' || req.url !== '/install-package') {
-    res.writeHead(404);
-    res.end(JSON.stringify({ error: 'Not found' }));
-    return;
-  }
-  
-  let body = '';
-  req.on('data', chunk => body += chunk);
-  req.on('end', () => {
-    try {
-      const request = JSON.parse(body);
-      if (!request.package) {
-        res.writeHead(400);
-        res.end(JSON.stringify({ error: 'Package name required' }));
-        return;
-      }
-      
-      const result = installPackage(request.package);
-      res.writeHead(result.success ? 200 : 400);
-      res.end(JSON.stringify(result));
-    } catch (error) {
-      res.writeHead(400);
-      res.end(JSON.stringify({ error: 'Invalid request' }));
-    }
-  });
-});
-
-server.listen(PORT, 'localhost', () => {
-  log('daemon_start', { port: PORT, pid: process.pid });
-  console.log(`Bayanat daemon listening on localhost:${PORT}`);
-});
-
-process.on('SIGTERM', () => server.close(() => process.exit(0)));
+while true; do
+    response=$(handle_request)
+    echo -e "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${#response}\r\n\r\n$response" | socat - TCP-LISTEN:8080,reuseaddr,fork
+done
 EOF
     
     chmod +x "$DAEMON_SCRIPT"
@@ -364,17 +314,13 @@ Type=simple
 User=bayanat-daemon
 Group=bayanat-daemon
 WorkingDirectory=/var/lib/bayanat-daemon
-ExecStart=/usr/local/bin/bayanat-daemon.js
+ExecStart=/usr/local/bin/bayanat-daemon.sh
 
 # Security options
 NoNewPrivileges=yes
 PrivateTmp=yes
-ProtectSystem=strict
 ProtectHome=yes
 ReadWritePaths=/var/log/bayanat-daemon
-RestrictAddressFamilies=AF_INET AF_INET6
-MemoryDenyWriteExecute=yes
-RestrictRealtime=yes
 
 # Process options
 Restart=always
@@ -524,7 +470,7 @@ show_completion() {
     echo "📋 Security Architecture:"
     echo "  • Admin user: Full system access (existing user)"
     echo "  • bayanat user: Unprivileged application service"
-    echo "  • bayanat-daemon user: Limited package installation only"
+    echo "  • bayanat-daemon user: HTTP API for updates and service management"
     echo ""
     echo "📁 Important Paths:"
     echo "  • Application: /opt/bayanat"
@@ -554,7 +500,6 @@ main() {
     setup_daemon_permissions
     setup_database
     setup_web_server "$DOMAIN"
-    install_cli
     create_daemon
     setup_bayanat_app
     show_completion "$DOMAIN"
