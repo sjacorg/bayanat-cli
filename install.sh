@@ -140,9 +140,27 @@ setup_web_server() {
     local DOMAIN=${1:-"127.0.0.1"}
     log "Configuring Caddy web server for domain: $DOMAIN"
     
+    # Only use HTTP for IP addresses, everything else gets HTTPS
+    local USE_HTTPS=true
+    if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        USE_HTTPS=false
+        log "Using HTTP-only configuration for IP address: $DOMAIN"
+    else
+        log "Using automatic HTTPS for domain: $DOMAIN"
+    fi
+    
     # Create Caddyfile
-    cat > /etc/caddy/Caddyfile << EOF
+    if [ "$USE_HTTPS" = "false" ]; then
+        cat > /etc/caddy/Caddyfile << EOF
+http://$DOMAIN {
+EOF
+    else
+        cat > /etc/caddy/Caddyfile << EOF
 $DOMAIN {
+EOF
+    fi
+    
+    cat >> /etc/caddy/Caddyfile << EOF
     # Reverse proxy to Bayanat application
     reverse_proxy 127.0.0.1:5000
     
@@ -153,7 +171,7 @@ $DOMAIN {
     }
     
     # Security headers
-    header {$(if [[ ! "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "
+    header {$(if [ "$USE_HTTPS" = "true" ]; then echo "
         Strict-Transport-Security \"max-age=31536000; includeSubDomains\""; fi)
         X-Content-Type-Options nosniff
         X-Frame-Options DENY
@@ -479,12 +497,19 @@ EOF
 # Show completion
 show_completion() {
     local DOMAIN=${1:-"127.0.0.1"}
+    
+    # Only use HTTP for IP addresses, everything else gets HTTPS
+    local USE_HTTPS=true
+    if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        USE_HTTPS=false
+    fi
+    
     echo ""
     success "🎉 Bayanat installation complete!"
     echo ""
     echo "🌐 Web Interface:"
-    if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        echo "  http://$DOMAIN (HTTP only - IP addresses cannot use HTTPS)"
+    if [ "$USE_HTTPS" = "false" ]; then
+        echo "  http://$DOMAIN (HTTP only - IP address)"
     else
         echo "  https://$DOMAIN (automatic HTTPS via Caddy)"
     fi
