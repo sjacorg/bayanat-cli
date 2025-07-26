@@ -570,9 +570,8 @@ get_server_ip() {
     echo "$ip"
 }
 
-# Get domain
-DOMAIN="${DOMAIN:-}"
-if [ -z "$DOMAIN" ]; then
+# Get domain - preserve any existing DOMAIN environment variable
+if [ -z "${DOMAIN:-}" ]; then
     DOMAIN=$(get_server_ip)
     log "No domain specified, using server IP: $DOMAIN"
 else
