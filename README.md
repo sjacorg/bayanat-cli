@@ -4,11 +4,11 @@ One-command installer for Bayanat, a Flask-based human rights data management sy
 
 ## Features
 
-- One-command setup - installs everything automatically
-- Automatic HTTPS with Let's Encrypt
-- Secure package management via HTTP API
-- Production-ready with user separation
-- Modern web server with security headers
+- **One-command setup** - installs everything automatically
+- **Automatic HTTPS** with Let's Encrypt for domains
+- **Zero-resource service management** via HTTP API
+- **Production-ready** with proper user separation
+- **Modern web server** with security headers and file upload limits
 
 ## Installation
 
@@ -19,59 +19,59 @@ One-command installer for Bayanat, a Flask-based human rights data management sy
 curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/master/install.sh | bash
 
 # With custom domain (automatic HTTPS)
-export DOMAIN=your-domain.com && curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/master/install.sh | bash
+export DOMAIN=example.com && curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/master/install.sh | bash
 ```
 
 **What gets installed:**
-- PostgreSQL + PostGIS, Redis, Node.js, Python tools
+- PostgreSQL + PostGIS, Redis, Python tools
 - Caddy web server with automatic HTTPS
 - Bayanat Flask application with virtual environment
-- Security: separate users for app and package management
-- All services configured with systemd
+- HTTP API for service management (systemd socket activation)
+- All services configured with systemd security hardening
 
 **Requirements:** Ubuntu 20.04+ or Debian 11+
 
 Set `DOMAIN` environment variable for custom domain (optional).
 
-## Security
+## Security Architecture
 
-Two users for privilege separation:
-- **bayanat**: Runs the application (no sudo)
-- **bayanat-daemon**: Installs packages only (limited sudo)
-- **admin**: System management (your existing user)
+**Privilege separation with three user levels:**
+- **bayanat**: Runs the main application (unprivileged)
+- **bayanat-daemon**: Manages services via HTTP API (limited sudo permissions)  
+- **admin**: Full system access (your existing user)
 
-Files are in `/opt/bayanat` (app) and `/var/lib/bayanat-daemon` (daemon).
+**Zero-attack surface**: Service management API uses systemd socket activation - no running processes when idle.
 
 ## Usage
 
 After installation:
 
 ```bash
-# Web interface is ready at:
+# 🌐 Web interface ready at:
 http://YOUR-SERVER-IP          # If no domain specified
-https://your-domain.com        # If domain specified (automatic HTTPS)
+https://example.com            # If domain specified (automatic HTTPS)
 
-# Monitor services (as admin user)
-systemctl status bayanat          # Application status
-systemctl status bayanat-daemon  # Package daemon status  
-systemctl status caddy           # Web server status
-systemctl status postgresql      # Database status
-systemctl status redis-server    # Cache status
+# 🔍 Monitor services
+systemctl status bayanat           # Main application
+systemctl status bayanat-api.socket  # Service management API
+systemctl status caddy            # Web server
+systemctl status postgresql       # Database
+systemctl status redis-server     # Cache
 
-# View logs
-journalctl -u bayanat -f         # Application logs
-journalctl -u caddy -f           # Web server logs
-tail -f /var/log/bayanat-daemon/operations.log  # Package operations
+# 📋 View logs
+journalctl -u bayanat -f          # Application logs
+journalctl -u caddy -f            # Web server logs  
+tail -f /var/log/bayanat/api.log  # API operations log
 ```
 
 
 ## Architecture
 
-- **Caddy** (80/443): Reverse proxy with auto HTTPS
-- **Bayanat** (5000): Flask app via uWSGI  
-- **Package daemon** (8080): Package management API
+- **Caddy** (80/443): Reverse proxy with automatic HTTPS
+- **Bayanat** (5000): Flask application via uWSGI  
+- **Service API** (8080): Zero-resource management via systemd socket activation
 
-## Files
+## File Structure
 
 ```
 /opt/bayanat/
@@ -84,13 +84,16 @@ tail -f /var/log/bayanat-daemon/operations.log  # Package operations
 /etc/caddy/
 └── Caddyfile               # Web server configuration
 
-/var/log/
-├── caddy/                  # Web server logs
-└── bayanat-daemon/         # Package daemon logs
+/etc/systemd/system/
+├── bayanat-api.socket      # HTTP API socket
+└── bayanat-api@.service    # API handler service
 
 /usr/local/bin/
-├── bayanat                 # CLI tool (if future extension)
-└── bayanat-daemon.js       # Package management daemon
+└── bayanat-handler.sh      # Service management script
+
+/var/log/
+├── caddy/                  # Web server logs
+└── bayanat/               # API operation logs
 ```
 
 ## Database
@@ -101,20 +104,34 @@ tail -f /var/log/bayanat-daemon/operations.log  # Package operations
 
 ## Service Management
 
+**Via HTTP API (recommended for app integrations):**
 ```bash
-# Restart application
-sudo systemctl restart bayanat
+# Restart services
+curl -X POST http://localhost:8080/restart-service \
+  -H 'Content-Type: application/json' \
+  -d '{"service":"bayanat"}'
 
-# Restart web server  
+# Check service status  
+curl -X POST http://localhost:8080/service-status \
+  -H 'Content-Type: application/json' \
+  -d '{"service":"caddy"}'
+
+# Update and restart Bayanat
+curl -X POST http://localhost:8080/update-bayanat
+
+# Health check
+curl -X GET http://localhost:8080/health
+```
+
+**Via systemctl (admin access):**
+```bash
+# Restart services
+sudo systemctl restart bayanat
 sudo systemctl restart caddy
 
-# Restart package daemon
-sudo systemctl restart bayanat-daemon
-
-# View service logs
-sudo journalctl -u bayanat -f      # Application logs
-sudo journalctl -u caddy -f        # Web server logs
-sudo journalctl -u bayanat-daemon -f  # Package daemon logs
+# View logs
+sudo journalctl -u bayanat -f
+sudo journalctl -u caddy -f
 ```
 
 ## Configuration
@@ -122,7 +139,7 @@ sudo journalctl -u bayanat-daemon -f  # Package daemon logs
 Caddy config at `/etc/caddy/Caddyfile`:
 
 ```caddyfile
-your-domain.com {
+example.com {
     reverse_proxy 127.0.0.1:5000
     
     handle_path /static/* {
@@ -136,18 +153,18 @@ your-domain.com {
 }
 ```
 
-## Package API
+## API Endpoints
 
-HTTP daemon at `localhost:8080`:
+The service management API runs on `localhost:8080` using systemd socket activation:
 
-```bash
-# Example API usage (internal use only)
-curl -X POST http://localhost:8080/install-package \
-     -H 'Content-Type: application/json' \
-     -d '{"package": "python3-requests"}'
-```
+| Endpoint | Method | Purpose | Payload |
+|----------|--------|---------|---------|
+| `/restart-service` | POST | Restart bayanat or caddy | `{"service":"bayanat"}` |
+| `/service-status` | POST | Get service status | `{"service":"caddy"}` |
+| `/update-bayanat` | POST | Pull code and restart | `{}` |
+| `/health` | GET | Check system health | - |
 
-Only whitelisted packages allowed, all operations logged.
+**Security**: Only `bayanat` and `caddy` services allowed. All operations logged to `/var/log/bayanat/api.log`.
 
 ## Requirements
 
@@ -159,14 +176,12 @@ Only whitelisted packages allowed, all operations logged.
 
 ## Troubleshooting
 
-## Troubleshooting
-
 **Service not starting:**
 ```bash
 # Check service status
 sudo systemctl status bayanat
 sudo systemctl status caddy
-sudo systemctl status bayanat-daemon
+sudo systemctl status bayanat-api.socket
 
 # Check logs for errors
 sudo journalctl -u bayanat -n 50
@@ -191,9 +206,19 @@ sudo caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl restart caddy
 ```
 
-All services use systemd security hardening.
+**API not responding:**
+```bash
+# Check socket is listening
+sudo systemctl status bayanat-api.socket
+ss -tlnp | grep :8080
 
-For high traffic, increase uWSGI processes in `/opt/bayanat/uwsgi.ini`.
+# Test API manually
+curl -X GET http://localhost:8080/health
+```
+
+**Performance tuning:**
+- For high traffic: increase uWSGI processes in `/opt/bayanat/uwsgi.ini`
+- All services use systemd security hardening for production use
 
 ## License
 
