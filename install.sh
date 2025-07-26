@@ -25,7 +25,7 @@ install_packages() {
         git postgresql postgresql-contrib postgis redis-server \
         python3 python3-pip python3-venv python3-dev build-essential \
         libpq-dev libxml2-dev libxslt1-dev libssl-dev libffi-dev \
-        libjpeg-dev libzip-dev libimage-exiftool-perl ffmpeg curl wget socat
+        libjpeg-dev libzip-dev libimage-exiftool-perl ffmpeg curl wget
 }
 
 # Install and setup Caddy web server
@@ -65,7 +65,7 @@ setup_users() {
         log "Created bayanat user"
     fi
     
-    # Create daemon user for package management
+    # Create daemon user for API handler
     if ! id bayanat-daemon >/dev/null 2>&1; then
         useradd --system --home-dir /var/lib/bayanat-daemon --create-home --shell /bin/bash bayanat-daemon
         log "Created bayanat-daemon user"
@@ -78,41 +78,36 @@ setup_users() {
     
     # Create daemon directories
     mkdir -p /var/lib/bayanat-daemon
-    mkdir -p /var/log/bayanat-daemon
     chown bayanat-daemon:bayanat-daemon /var/lib/bayanat-daemon
-    chown bayanat-daemon:bayanat-daemon /var/log/bayanat-daemon
-    chmod 755 /var/lib/bayanat-daemon /var/log/bayanat-daemon
+    chmod 755 /var/lib/bayanat-daemon
     
     log "Users configured"
 }
 
 # Configure sudo permissions for daemon user
 setup_daemon_permissions() {
-    log "Setting up package daemon permissions..."
+    log "Setting up daemon permissions..."
     
-    # Create sudoers file for package installation and service management
+    # Create sudoers file for service management
     cat > /etc/sudoers.d/bayanat-daemon << 'EOF'
-# Package installation and service management permissions for bayanat-daemon
+# Service management permissions for bayanat-daemon user
 
 bayanat-daemon ALL=(ALL) NOPASSWD: \
-    /usr/bin/apt update, \
-    /usr/bin/apt install *, \
-    /usr/bin/apt upgrade *, \
-    /usr/bin/dpkg -l, \
-    /usr/bin/dpkg -s *, \
     /bin/systemctl restart bayanat, \
     /bin/systemctl restart caddy, \
     /bin/systemctl is-active bayanat, \
     /bin/systemctl is-active caddy, \
     /bin/systemctl is-enabled bayanat, \
-    /bin/systemctl is-enabled caddy, \
-    /usr/bin/sudo -u bayanat *
+    /bin/systemctl is-enabled caddy
+
+bayanat-daemon ALL=(bayanat) NOPASSWD: \
+    /usr/bin/git -C /opt/bayanat pull
 EOF
 
     # Validate sudoers syntax
     visudo -c -f /etc/sudoers.d/bayanat-daemon || error "Invalid sudoers configuration"
     
-    log "Package daemon permissions configured"
+    log "Daemon permissions configured"
 }
 
 # Setup database
@@ -229,115 +224,101 @@ EOF
 
 # Skip CLI installation - using direct HTTP daemon instead
 
-# Create privileged daemon
-create_daemon() {
-    log "Creating privileged HTTP daemon..."
+# Create HTTP API using systemd socket activation
+create_api() {
+    log "Creating HTTP API with systemd socket activation..."
     
-    # Copy daemon script
-    DAEMON_SCRIPT="/usr/local/bin/bayanat-daemon.sh"
-    cat > "$DAEMON_SCRIPT" << 'EOF'
+    # Create API handler script
+    API_HANDLER="/usr/local/bin/bayanat-handler.sh"
+    cat > "$API_HANDLER" << 'EOF'
 #!/bin/bash
 
-LOG_FILE="/var/log/bayanat-daemon/operations.log"
+LOG_FILE="/var/log/bayanat/api.log"
+log() { echo "$(date -Iseconds) $*" >> "$LOG_FILE"; }
 
-log() { echo "$(date -Iseconds) $*" | tee -a "$LOG_FILE"; }
-
-handle_request() {
-    read -r method path protocol
-    while IFS= read -r line && [ "$line" != $'\r' ]; do :; done
-    read -r body
-    
-    service=$(echo "$body" | grep -o '"service":"[^"]*"' | cut -d'"' -f4)
-    package=$(echo "$body" | grep -o '"package":"[^"]*"' | cut -d'"' -f4)
-    
-    case "$path" in
-        "/restart-service")
-            if [[ "$service" =~ ^(bayanat|caddy)$ ]]; then
-                log "Restarting service: $service"
-                if sudo systemctl restart "$service" 2>/dev/null; then
-                    echo '{"success":true,"message":"Service restarted"}'
-                else
-                    echo '{"success":false,"error":"Restart failed"}'
-                fi
-            else
-                echo '{"success":false,"error":"Invalid service"}'
-            fi ;;
-        "/service-status")
-            if [[ "$service" =~ ^(bayanat|caddy)$ ]]; then
-                status=$(sudo systemctl is-active "$service" 2>/dev/null || echo "inactive")
-                enabled=$(sudo systemctl is-enabled "$service" 2>/dev/null || echo "disabled")
-                echo "{\"success\":true,\"service\":\"$service\",\"status\":\"$status\",\"enabled\":\"$enabled\"}"
-            else
-                echo '{"success":false,"error":"Invalid service"}'
-            fi ;;
-        "/install-package")
-            if [[ "$package" =~ ^(python3-|postgresql-|lib|ffmpeg|build-essential|redis-) ]]; then
-                log "Installing package: $package"
-                if sudo apt update -qq && sudo apt install -y "$package" 2>/dev/null; then
-                    echo '{"success":true,"message":"Package installed"}'
-                else
-                    echo '{"success":false,"error":"Install failed"}'
-                fi
-            else
-                echo '{"success":false,"error":"Invalid package"}'
-            fi ;;
-        "/update-bayanat")
-            log "Updating Bayanat application"
-            if cd /opt/bayanat && sudo -u bayanat git pull 2>/dev/null && sudo systemctl restart bayanat 2>/dev/null; then
-                echo '{"success":true,"message":"Bayanat updated and restarted"}'
-            else
-                echo '{"success":false,"error":"Update failed"}'
-            fi ;;
-        *) echo '{"success":false,"error":"Not found"}' ;;
-    esac
-}
-
-log "Bayanat daemon starting on port 8080"
-
-while true; do
-    response=$(handle_request)
-    echo -e "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${#response}\r\n\r\n$response" | socat - TCP-LISTEN:8080,reuseaddr,fork
+# Read request and extract service
+read -r method path protocol
+while IFS= read -r line && [ "$line" != $'\r' ]; do
+    [[ "$line" =~ ^Content-Length:\ ([0-9]+) ]] && content_length="${BASH_REMATCH[1]}"
 done
+
+# Read body and extract service
+body=""
+[ -n "$content_length" ] && [ "$content_length" -gt 0 ] && read -r -N "$content_length" body
+service=$(echo "$body" | sed -n 's/.*"service":"\([^"]*\)".*/\1/p')
+
+# Unified response function
+respond() { printf "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s" ${#1} "$1"; }
+
+# Validate service once
+[[ "$service" =~ ^(bayanat|caddy)$ ]] || { respond '{"success":false,"error":"Invalid service"}'; exit; }
+
+# Handle API endpoints
+case "$path" in
+    "/restart-service")
+        log "Restarting: $service"
+        sudo systemctl restart "$service" 2>/dev/null && 
+            respond '{"success":true,"message":"Service restarted"}' ||
+            respond '{"success":false,"error":"Restart failed"}' ;;
+    
+    "/service-status")
+        respond "{\"success\":true,\"service\":\"$service\",\"status\":\"$(sudo systemctl is-active "$service" 2>/dev/null || echo inactive)\",\"enabled\":\"$(sudo systemctl is-enabled "$service" 2>/dev/null || echo disabled)\"}" ;;
+    
+    "/update-bayanat")
+        log "Updating Bayanat"
+        cd /opt/bayanat && sudo -u bayanat git pull >/dev/null 2>&1 && sudo systemctl restart bayanat 2>/dev/null &&
+            respond '{"success":true,"message":"Updated and restarted"}' ||
+            respond '{"success":false,"error":"Update failed"}' ;;
+    
+    "/health")
+        sudo systemctl is-active bayanat >/dev/null 2>&1 && sudo systemctl is-active caddy >/dev/null 2>&1 &&
+            respond '{"success":true,"status":"healthy"}' ||
+            respond '{"success":false,"status":"unhealthy"}' ;;
+    
+    *) respond '{"success":false,"error":"Not found"}' ;;
+esac
 EOF
     
-    chmod +x "$DAEMON_SCRIPT"
-    chown bayanat-daemon:bayanat-daemon "$DAEMON_SCRIPT"
+    chmod +x "$API_HANDLER"
     
-    # Create systemd service
-    cat > /etc/systemd/system/bayanat-daemon.service << 'EOF'
+    # Create log directory
+    mkdir -p /var/log/bayanat
+    chown bayanat:bayanat /var/log/bayanat
+    
+    # Create systemd socket
+    cat > /etc/systemd/system/bayanat-api.socket << 'EOF'
 [Unit]
-Description=Bayanat Privileged HTTP Daemon
-After=network.target
+Description=Bayanat HTTP API Socket
 
-[Service]
-Type=simple
-User=bayanat-daemon
-Group=bayanat-daemon
-WorkingDirectory=/var/lib/bayanat-daemon
-ExecStart=/usr/local/bin/bayanat-daemon.sh
-
-# Security options
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectHome=yes
-ReadWritePaths=/var/log/bayanat-daemon
-
-# Process options
-Restart=always
-RestartSec=3
-StandardOutput=journal
-StandardError=journal
+[Socket]
+ListenStream=8080
+Accept=yes
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=sockets.target
 EOF
     
-    # Start daemon
-    systemctl daemon-reload
-    systemctl enable bayanat-daemon
-    systemctl start bayanat-daemon
+    # Create systemd service for socket activation
+    cat > /etc/systemd/system/bayanat-api@.service << 'EOF'
+[Unit]
+Description=Bayanat HTTP API Handler
+
+[Service]
+Type=oneshot
+User=bayanat-daemon
+Group=bayanat-daemon
+ExecStart=/usr/local/bin/bayanat-handler.sh
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+EOF
     
-    success "HTTP daemon created and started"
+    # Enable and start socket
+    systemctl daemon-reload
+    systemctl enable bayanat-api.socket
+    systemctl start bayanat-api.socket
+    
+    success "HTTP API created with systemd socket activation"
 }
 
 # Complete Bayanat application setup
@@ -463,14 +444,14 @@ show_completion() {
     echo "🔧 Services:"
     echo "  • Bayanat App: systemctl status bayanat"
     echo "  • Caddy Server: systemctl status caddy"
-    echo "  • Package Daemon: systemctl status bayanat-daemon"
+    echo "  • HTTP API: systemctl status bayanat-api.socket"
     echo "  • PostgreSQL: systemctl status postgresql"
     echo "  • Redis: systemctl status redis-server"
     echo ""
     echo "📋 Security Architecture:"
     echo "  • Admin user: Full system access (existing user)"
     echo "  • bayanat user: Unprivileged application service"
-    echo "  • bayanat-daemon user: HTTP API for updates and service management"
+    echo "  • bayanat-daemon user: Socket-activated HTTP API for service management"
     echo ""
     echo "📁 Important Paths:"
     echo "  • Application: /opt/bayanat"
@@ -480,7 +461,7 @@ show_completion() {
     echo "🔍 Monitoring:"
     echo "  • Application logs: journalctl -u bayanat -f"
     echo "  • Web server logs: journalctl -u caddy -f"
-    echo "  • Package daemon: tail -f /var/log/bayanat-daemon/operations.log"
+    echo "  • API logs: tail -f /var/log/bayanat/api.log"
     echo ""
     echo "💾 Database: postgresql:///bayanat (local trust authentication)"
     echo ""
@@ -500,7 +481,7 @@ main() {
     setup_daemon_permissions
     setup_database
     setup_web_server "$DOMAIN"
-    create_daemon
+    create_api
     setup_bayanat_app
     show_completion "$DOMAIN"
 }
