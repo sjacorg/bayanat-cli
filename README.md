@@ -1,225 +1,216 @@
 # Bayanat CLI
 
-One-command installer for Bayanat, a Flask-based human rights data management system.
+**Production installer and update companion for Bayanat**
+
+A comprehensive deployment solution for Bayanat, the open-source human rights data management platform developed by the Syria Justice and Accountability Centre (SJAC).
 
 ## Features
 
-- **One-command setup** - installs everything automatically
-- **Automatic HTTPS** with Let's Encrypt for domains
-- **Zero-resource service management** via HTTP API
-- **Production-ready** with proper user separation
-- **Modern web server** with security headers and file upload limits
+🎯 **Complete Production Setup** - Full system installation with one command  
+🔒 **Web-Based Updates** - Update system directly from Bayanat admin interface  
+⚡ **Zero-Resource API** - Management interface with no idle resource consumption  
+🌐 **Automatic HTTPS** - Let's Encrypt integration for production domains  
+🛡️ **Security Architecture** - Multi-layer privilege separation and hardening  
 
-## Installation
+## Quick Start
 
-### Complete Setup (One Command)
-
-```bash
-# Simple installation (auto-detects server IP, HTTP only)
-curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/master/install.sh | bash
-
-# With custom domain (automatic HTTPS)
-export DOMAIN=example.com && curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/master/install.sh | bash
-```
-
-**What gets installed:**
-- PostgreSQL + PostGIS, Redis, Python tools
-- Caddy web server with automatic HTTPS
-- Bayanat Flask application with virtual environment
-- HTTP API for service management (systemd socket activation)
-- All services configured with systemd security hardening
-
-**Requirements:** Ubuntu 20.04+ or Debian 11+
-
-Set `DOMAIN` environment variable for custom domain (optional).
-
-## Security Architecture
-
-**Privilege separation with three user levels:**
-- **bayanat**: Runs the main application (unprivileged)
-- **bayanat-daemon**: Manages services via HTTP API (limited sudo permissions)  
-- **admin**: Full system access (your existing user)
-
-**Zero-attack surface**: Service management API uses systemd socket activation - no running processes when idle.
-
-## Usage
-
-After installation:
+### Fresh Installation 
 
 ```bash
-# 🌐 Web interface ready at:
-http://YOUR-SERVER-IP          # If no domain specified
-https://example.com            # If domain specified (automatic HTTPS)
+# Standard installation (auto-detects server IP)
+curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/main/install.sh | bash
 
-# 🔍 Monitor services
-systemctl status bayanat           # Main application
-systemctl status bayanat-api.socket  # Service management API
-systemctl status caddy            # Web server
-systemctl status postgresql       # Database
-systemctl status redis-server     # Cache
-
-# 📋 View logs
-journalctl -u bayanat -f          # Application logs
-journalctl -u caddy -f            # Web server logs  
-tail -f /var/log/bayanat/api.log  # API operations log
+# Production installation with custom domain
+export DOMAIN=your-domain.org
+curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/main/install.sh | bash
 ```
 
+### Add Update Companion (Existing Installations)
+
+For existing Bayanat deployments, add the update companion:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/main/install.sh | bash -s -- --companion-only
+```
+
+**System Requirements:** Ubuntu 24.04+ with sudo access
+
+## What Gets Installed
+
+✅ **PostgreSQL** + PostGIS extensions (spatial data support)  
+✅ **Redis** (caching and task queue)  
+✅ **Caddy** web server (automatic HTTPS + security headers)  
+✅ **Bayanat** app (latest from GitHub)  
+✅ **Update API** (systemd socket activation - zero resources when idle)  
+✅ **All systemd services** configured and hardened  
+
+## After Installation
+
+Your Bayanat instance will be available at:
+
+```bash
+# Standard installation
+http://YOUR-SERVER-IP
+
+# Domain installation  
+https://your-domain.org
+```
+
+### Update System
+
+The installer creates a companion HTTP API for system updates:
+
+```bash
+# Trigger system update
+curl -X POST http://localhost:8080/update-bayanat
+
+# Check system health
+curl -X GET http://localhost:8080/health
+```
+
+**Web Interface Integration**: The update API runs on localhost only (`127.0.0.1:8080`) and is designed to be called from Bayanat's backend, enabling secure system updates through the web interface. 
 
 ## Architecture
 
-- **Caddy** (80/443): Reverse proxy with automatic HTTPS
-- **Bayanat** (5000): Flask application via uWSGI  
-- **Service API** (8080): Zero-resource management via systemd socket activation
+### Security Model
+
+The system implements a three-tier privilege separation model:
+
+- **bayanat**: Application user with minimal system permissions
+- **bayanat-daemon**: Service management user with limited sudo access
+- **admin**: System administrator with full control
+
+### Resource Management
+
+The update API uses systemd socket activation:
+- Zero processes running when idle
+- API handler spawns only when requests arrive
+- Optimal for resource-constrained environments
+
+## System Management
+
+### Service Status Monitoring
+
+```bash
+# Web interface connectivity
+curl -I http://your-server-ip
+
+# Service status verification
+systemctl status bayanat             # Application service
+systemctl status caddy              # Web server  
+systemctl status bayanat-api.socket # Management API
+systemctl status postgresql         # Database
+systemctl status redis-server       # Cache service
+
+# Log monitoring
+journalctl -u bayanat -f            # Application logs
+journalctl -u caddy -f              # Web server logs
+tail -f /var/log/bayanat/api.log    # API operations
+```
+
+### Management API Reference
+
+| Endpoint | Method | Purpose | Payload |
+|----------|--------|---------|---------|
+| `/update-bayanat` | POST | Update system (git pull, migrations, restart) | `{}` |
+| `/restart-service` | POST | Restart application or web server | `{"service":"bayanat"}` |
+| `/health` | GET | System health verification | - |
+| `/service-status` | POST | Detailed service information | `{"service":"bayanat"}` |
+
+### Web Interface Integration
+
+Example implementation for admin interface:
+
+```javascript
+async function updateSystem() {
+    const response = await fetch('http://localhost:8080/update-bayanat', { 
+        method: 'POST' 
+    });
+    const result = await response.json();
+    
+    if (result.success) {
+        showNotification('System updated successfully');
+    } else {
+        showError('Update failed: ' + result.error);
+    }
+}
+```
 
 ## File Structure
 
 ```
-/opt/bayanat/
+/opt/bayanat/               # Application directory
 ├── env/                    # Python virtual environment
-├── run.py                  # Flask application entry point
+├── run.py                  # Flask application entry point  
 ├── uwsgi.ini              # uWSGI configuration
-├── .env                   # Environment variables
-└── enferno/               # Bayanat application code
+└── .env                   # Environment variables
 
-/etc/caddy/
-└── Caddyfile               # Web server configuration
-
-/etc/systemd/system/
-├── bayanat-api.socket      # HTTP API socket
-└── bayanat-api@.service    # API handler service
-
-/usr/local/bin/
-└── bayanat-handler.sh      # Service management script
-
-/var/log/
-├── caddy/                  # Web server logs
-└── bayanat/               # API operation logs
+/etc/caddy/Caddyfile        # Web server configuration
+/usr/local/bin/bayanat-handler.sh  # Management API handler
+/var/log/bayanat/api.log    # API operations log
 ```
-
-## Database
-
-- PostgreSQL database: `bayanat`
-- User: `bayanat` (trust auth)
-- Extensions: PostGIS, pg_trgm
-
-## Service Management
-
-**Via HTTP API (recommended for app integrations):**
-```bash
-# Restart services
-curl -X POST http://localhost:8080/restart-service \
-  -H 'Content-Type: application/json' \
-  -d '{"service":"bayanat"}'
-
-# Check service status  
-curl -X POST http://localhost:8080/service-status \
-  -H 'Content-Type: application/json' \
-  -d '{"service":"caddy"}'
-
-# Update and restart Bayanat
-curl -X POST http://localhost:8080/update-bayanat
-
-# Health check
-curl -X GET http://localhost:8080/health
-```
-
-**Via systemctl (admin access):**
-```bash
-# Restart services
-sudo systemctl restart bayanat
-sudo systemctl restart caddy
-
-# View logs
-sudo journalctl -u bayanat -f
-sudo journalctl -u caddy -f
-```
-
-## Configuration
-
-Caddy config at `/etc/caddy/Caddyfile`:
-
-```caddyfile
-example.com {
-    reverse_proxy 127.0.0.1:5000
-    
-    handle_path /static/* {
-        root * /opt/bayanat/enferno/static
-        file_server
-    }
-    
-    # Security headers automatically applied
-    # File upload limits configured
-    # Automatic HTTPS enabled
-}
-```
-
-## API Endpoints
-
-The service management API runs on `localhost:8080` using systemd socket activation:
-
-| Endpoint | Method | Purpose | Payload |
-|----------|--------|---------|---------|
-| `/restart-service` | POST | Restart bayanat or caddy | `{"service":"bayanat"}` |
-| `/service-status` | POST | Get service status | `{"service":"caddy"}` |
-| `/update-bayanat` | POST | Pull code and restart | `{}` |
-| `/health` | GET | Check system health | - |
-
-**Security**: Only `bayanat` and `caddy` services allowed. All operations logged to `/var/log/bayanat/api.log`.
-
-## Requirements
-
-- Ubuntu 20.04+ or Debian 11+
-- 2GB RAM (4GB recommended)
-- 10GB disk space
-- Root/sudo access
-- Internet connection
 
 ## Troubleshooting
 
-**Service not starting:**
-```bash
-# Check service status
-sudo systemctl status bayanat
-sudo systemctl status caddy
-sudo systemctl status bayanat-api.socket
+### Common Issues
 
-# Check logs for errors
-sudo journalctl -u bayanat -n 50
-sudo journalctl -u caddy -n 50
+**Web interface not accessible:**
+```bash
+# Verify service status
+systemctl status bayanat caddy postgresql redis-server
+
+# Check for errors
+journalctl -u bayanat -n 20
+journalctl -u caddy -n 20
 ```
 
-**Database connection issues:**
+**Management API unresponsive:**
+```bash
+# Verify API socket status
+systemctl status bayanat-api.socket
+ss -tlnp | grep :8080
+
+# Test API connectivity
+curl -X GET http://localhost:8080/health
+```
+
+**Database connectivity issues:**
 ```bash
 # Test database connection
 sudo -u bayanat psql -d bayanat -c "SELECT version();"
 
-# Check PostgreSQL status
-sudo systemctl status postgresql
+# Verify PostgreSQL status
+systemctl status postgresql
 ```
 
-**Web server not accessible:**
+**Service restart procedure:**
 ```bash
-# Check Caddy configuration
-sudo caddy validate --config /etc/caddy/Caddyfile
-
-# Restart web server
-sudo systemctl restart caddy
+sudo systemctl restart bayanat caddy bayanat-api.socket
 ```
 
-**API not responding:**
-```bash
-# Check socket is listening
-sudo systemctl status bayanat-api.socket
-ss -tlnp | grep :8080
+### Performance Optimization
 
-# Test API manually
-curl -X GET http://localhost:8080/health
-```
+- **High Traffic**: Increase uWSGI processes in `/opt/bayanat/uwsgi.ini` (default: 4 processes)
+- **Memory Usage**: Default configuration requires ~1GB RAM
+- **Storage**: Media files are stored in `/opt/bayanat/enferno/media/`
 
-**Performance tuning:**
-- For high traffic: increase uWSGI processes in `/opt/bayanat/uwsgi.ini`
-- All services use systemd security hardening for production use
+## System Requirements
+
+- **Operating System**: Ubuntu 24.04+ (primary testing platform)
+- **Memory**: 2GB RAM minimum (4GB recommended for production)
+- **Storage**: 10GB available disk space minimum
+- **Access**: Root or passwordless sudo access required
+- **Network**: Internet connectivity for package installation
+
+## Design Philosophy
+
+This installer applies modern deployment practices to human rights data management:
+
+- **Simplified Operations**: One-command installation with web-based updates
+- **Resource Efficiency**: systemd socket activation ensures zero idle resource consumption
+- **Security Focus**: Multi-layer privilege separation protects system integrity
+- **Production Ready**: Hardened configuration suitable for organizational deployment
 
 ## License
 
-This project is licensed under the GNU Affero General Public License v3.0. See the [LICENSE](license.txt) file for details.
+GNU Affero General Public License v3.0 - see [LICENSE](license.txt)
