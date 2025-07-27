@@ -282,8 +282,7 @@ service=$(echo "$body" | sed -n 's/.*"service":"\([^"]*\)".*/\1/p')
 # Unified response function
 respond() { printf "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s" ${#1} "$1"; }
 
-# Validate service once
-[[ "$service" =~ ^(bayanat|caddy)$ ]] || { respond '{"success":false,"error":"Invalid service"}'; exit; }
+# Service validation moved to individual endpoints that need it
 
 # Helper functions for update process
 respond_error() {
@@ -310,7 +309,7 @@ update_bayanat() {
     
     # Step 2: Pull new code
     log "Pulling updates from git"
-    if ! sudo -u bayanat git pull; then
+    if ! sudo -u bayanat /usr/bin/git -C /opt/bayanat pull; then
         respond_error "Git pull failed"
         return
     fi
@@ -318,7 +317,7 @@ update_bayanat() {
     # Step 3: Install dependencies
     log "Installing dependencies"
     if [ -f "requirements/main.txt" ]; then
-        if ! sudo -u bayanat /opt/bayanat/env/bin/pip install -r requirements/main.txt; then
+        if ! sudo -u bayanat /opt/bayanat/env/bin/pip install --quiet -r requirements/main.txt; then
             respond_error "Failed to install dependencies"
             return
         fi
@@ -355,12 +354,16 @@ update_bayanat() {
 # Handle API endpoints
 case "$path" in
     "/restart-service")
+        # Validate service for this endpoint
+        [[ "$service" =~ ^(bayanat|caddy)$ ]] || { respond '{"success":false,"error":"Invalid service"}'; exit; }
         log "Restarting: $service"
         sudo systemctl restart "$service" 2>/dev/null && 
             respond '{"success":true,"message":"Service restarted"}' ||
             respond '{"success":false,"error":"Restart failed"}' ;;
     
     "/service-status")
+        # Validate service for this endpoint
+        [[ "$service" =~ ^(bayanat|caddy)$ ]] || { respond '{"success":false,"error":"Invalid service"}'; exit; }
         respond "{\"success\":true,\"service\":\"$service\",\"status\":\"$(sudo systemctl is-active "$service" 2>/dev/null || echo inactive)\",\"enabled\":\"$(sudo systemctl is-enabled "$service" 2>/dev/null || echo disabled)\"}" ;;
     
     "/update-bayanat")
@@ -380,14 +383,10 @@ EOF
     # Create log directory
     mkdir -p /var/log/bayanat
     
-    # Only chown to bayanat if user exists (for existing installations)
-    if id bayanat >/dev/null 2>&1; then
-        chown bayanat:bayanat /var/log/bayanat
-    else
-        # For fresh servers, use bayanat-daemon
-        chown bayanat-daemon:bayanat-daemon /var/log/bayanat
-        log "No existing bayanat user found, using bayanat-daemon for logs"
-    fi
+    # Set proper ownership for log directory and create log file
+    chown bayanat-daemon:bayanat-daemon /var/log/bayanat
+    touch /var/log/bayanat/api.log
+    chown bayanat-daemon:bayanat-daemon /var/log/bayanat/api.log
     
     # Create systemd socket
     cat > /etc/systemd/system/bayanat-api.socket << 'EOF'
@@ -416,6 +415,9 @@ StandardInput=socket
 StandardOutput=socket
 StandardError=journal
 EOF
+    
+    # Configure git safe directory for daemon user
+    sudo -u bayanat-daemon git config --global --add safe.directory /opt/bayanat
     
     # Enable and start socket
     systemctl daemon-reload
