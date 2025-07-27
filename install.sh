@@ -1,12 +1,50 @@
 #!/bin/bash
 set -e
 
+# Setup comprehensive logging
+# All output (stdout/stderr) is captured to timestamped log file
+INSTALL_LOG="/tmp/bayanat-install-$(date +%Y%m%d-%H%M%S).log"
+
+# Clean up old install logs (keep last 5)
+find /tmp -name "bayanat-install-*.log" -type f -mtime +7 -delete 2>/dev/null || true
+
+# Redirect all output to both console and log file
+exec > >(tee -a "$INSTALL_LOG")
+exec 2> >(tee -a "$INSTALL_LOG" >&2)
+
 echo "🚀 Bayanat CLI Installer (HTTP API Architecture)"
 echo "==============================================="
+echo "📝 Installation log: $INSTALL_LOG"
+echo ""
 
-log() { echo "[INFO] $1"; }
-error() { echo "[ERROR] $1"; exit 1; }
-success() { echo "[SUCCESS] $1"; }
+# Enhanced logging functions (output already captured via exec)
+log() { 
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $1"
+}
+error() { 
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1"
+    echo ""
+    echo "❌ Installation failed. Check log: $INSTALL_LOG"
+    exit 1
+}
+success() { 
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SUCCESS] $1"
+}
+
+# Log system information for debugging
+log_system_info() {
+    log "=== System Information ==="
+    log "Date: $(date)"
+    log "User: $(whoami)"
+    log "OS: $(uname -a)"
+    log "Distribution: $(lsb_release -d 2>/dev/null | cut -f2 || echo 'Unknown')"
+    log "Disk space: $(df -h / | tail -1)"
+    log "Memory: $(free -h | head -2)"
+    log "=========================="
+}
+
+# Run system info logging
+log_system_info
 
 # Parse command line arguments
 parse_args() {
@@ -571,6 +609,8 @@ show_completion() {
     echo ""
     echo "💾 Database: postgresql:///bayanat (local trust authentication)"
     echo ""
+    echo "📋 Installation Log: $INSTALL_LOG"
+    echo ""
     echo "🚀 Ready to use!"
 }
 
@@ -627,6 +667,8 @@ companion_install() {
     echo "  • POST /service-status - Check service status"
     echo "  • POST /update-bayanat - Update and restart"
     echo "  • GET /health - Health check"
+    echo ""
+    echo "📋 Installation Log: $INSTALL_LOG"
 }
 
 # Full installation (original main function)
