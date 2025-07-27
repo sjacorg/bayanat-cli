@@ -220,6 +220,7 @@ EOF
     @sensitive {
         path *.py *.sh *.lua *.log *.md5 *.pl *.cgi
         path_regexp dotfiles /\\.
+        path /.git/*
     }
     respond @sensitive 404
     
@@ -284,6 +285,73 @@ respond() { printf "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent
 # Validate service once
 [[ "$service" =~ ^(bayanat|caddy)$ ]] || { respond '{"success":false,"error":"Invalid service"}'; exit; }
 
+# Helper functions for update process
+respond_error() {
+    local message="$1"
+    log "ERROR: $message"
+    respond "{\"success\":false,\"error\":\"$message\"}"
+}
+
+respond_success() {
+    local message="$1"
+    log "SUCCESS: $message"
+    respond "{\"success\":true,\"message\":\"$message\"}"
+}
+
+# Simple update process for basic prototype
+update_bayanat() {
+    log "Starting basic update process"
+    
+    # Step 1: Check access
+    if ! cd /opt/bayanat; then
+        respond_error "Cannot access /opt/bayanat"
+        return
+    fi
+    
+    # Step 2: Pull new code
+    log "Pulling updates from git"
+    if ! sudo -u bayanat git pull; then
+        respond_error "Git pull failed"
+        return
+    fi
+    
+    # Step 3: Install dependencies
+    log "Installing dependencies"
+    if [ -f "requirements/main.txt" ]; then
+        if ! sudo -u bayanat /opt/bayanat/env/bin/pip install -r requirements/main.txt; then
+            respond_error "Failed to install dependencies"
+            return
+        fi
+    fi
+    
+    # Step 4: Apply migrations
+    log "Applying database migrations"
+    if ! sudo -u bayanat bash -c "cd /opt/bayanat && source env/bin/activate && flask apply-migrations"; then
+        respond_error "Database migration failed"
+        return
+    fi
+    
+    # Step 5: Restart service
+    log "Restarting Bayanat service"
+    if ! sudo systemctl restart bayanat; then
+        respond_error "Failed to restart service"
+        return
+    fi
+    
+    # Step 6: Basic health check
+    log "Performing health check"
+    sleep 3
+    if ! sudo systemctl is-active bayanat >/dev/null 2>&1; then
+        respond_error "Service not running after update"
+        return
+    fi
+    
+    # Success
+    new_commit=$(git rev-parse HEAD 2>/dev/null)
+    log "Update completed successfully"
+    respond_success "Updated to commit $new_commit"
+}
+
 # Handle API endpoints
 case "$path" in
     "/restart-service")
@@ -296,10 +364,7 @@ case "$path" in
         respond "{\"success\":true,\"service\":\"$service\",\"status\":\"$(sudo systemctl is-active "$service" 2>/dev/null || echo inactive)\",\"enabled\":\"$(sudo systemctl is-enabled "$service" 2>/dev/null || echo disabled)\"}" ;;
     
     "/update-bayanat")
-        log "Updating Bayanat"
-        cd /opt/bayanat && sudo -u bayanat git pull >/dev/null 2>&1 && sudo systemctl restart bayanat 2>/dev/null &&
-            respond '{"success":true,"message":"Updated and restarted"}' ||
-            respond '{"success":false,"error":"Update failed"}' ;;
+        update_bayanat ;;
     
     "/health")
         sudo systemctl is-active bayanat >/dev/null 2>&1 && sudo systemctl is-active caddy >/dev/null 2>&1 &&
@@ -314,7 +379,15 @@ EOF
     
     # Create log directory
     mkdir -p /var/log/bayanat
-    chown bayanat:bayanat /var/log/bayanat
+    
+    # Only chown to bayanat if user exists (for existing installations)
+    if id bayanat >/dev/null 2>&1; then
+        chown bayanat:bayanat /var/log/bayanat
+    else
+        # For fresh servers, use bayanat-daemon
+        chown bayanat-daemon:bayanat-daemon /var/log/bayanat
+        log "No existing bayanat user found, using bayanat-daemon for logs"
+    fi
     
     # Create systemd socket
     cat > /etc/systemd/system/bayanat-api.socket << 'EOF'
@@ -509,6 +582,19 @@ companion_install() {
     # Basic system checks
     [ "$(uname -s)" = "Linux" ] || error "Linux required"
     command -v systemctl >/dev/null || error "systemd required"
+    
+    # Check for existing Bayanat installation
+    if ! id bayanat >/dev/null 2>&1 && [ ! -d "/opt/bayanat" ]; then
+        echo ""
+        echo "⚠️  No existing Bayanat installation detected."
+        echo ""
+        echo "Companion mode requires an existing Bayanat installation."
+        echo "For a fresh installation, run without --companion-only:"
+        echo ""
+        echo "  export DOMAIN=$DOMAIN && ./install.sh"
+        echo ""
+        error "No existing Bayanat installation found"
+    fi
     
     # Create daemon user if it doesn't exist
     if ! id bayanat-daemon >/dev/null 2>&1; then
