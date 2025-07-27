@@ -18,11 +18,11 @@ A comprehensive deployment solution for Bayanat, the open-source human rights da
 
 ```bash
 # Standard installation (auto-detects server IP)
-curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/master/install.sh | bash
 
 # Production installation with custom domain
 export DOMAIN=your-domain.org
-curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/master/install.sh | bash
 ```
 
 ### Add Update Companion (Existing Installations)
@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/main/install.sh
 For existing Bayanat deployments, add the update companion:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/main/install.sh | bash -s -- --companion-only
+curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/master/install.sh | bash -s -- --companion-only
 ```
 
 **System Requirements:** Ubuntu 24.04+ with sudo access
