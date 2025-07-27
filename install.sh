@@ -8,6 +8,37 @@ log() { echo "[INFO] $1"; }
 error() { echo "[ERROR] $1"; exit 1; }
 success() { echo "[SUCCESS] $1"; }
 
+# Parse command line arguments
+parse_args() {
+    INSTALL_MODE="full"
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --companion-only)
+                INSTALL_MODE="companion"
+                shift ;;
+            --help)
+                show_usage
+                exit 0 ;;
+            *)
+                error "Unknown option: $1" ;;
+        esac
+    done
+}
+
+# Show usage information
+show_usage() {
+    echo "Bayanat CLI Installer"
+    echo ""
+    echo "Usage:"
+    echo "  $0                    # Full installation"
+    echo "  $0 --companion-only   # Add update companion to existing installation"
+    echo "  $0 --help             # Show this help"
+    echo ""
+    echo "Environment variables:"
+    echo "  DOMAIN=example.com    # Custom domain (enables HTTPS)"
+}
+
 # Check system requirements
 check_system() {
     [ "$(uname -s)" = "Linux" ] || error "Linux required"
@@ -469,6 +500,48 @@ show_completion() {
 }
 
 # Main installation flow
+# Companion-only installation (for existing Bayanat setups)
+companion_install() {
+    local DOMAIN=${1:-"127.0.0.1"}
+    
+    log "Adding Bayanat companion to existing installation..."
+    
+    # Basic system checks
+    [ "$(uname -s)" = "Linux" ] || error "Linux required"
+    command -v systemctl >/dev/null || error "systemd required"
+    
+    # Create daemon user if it doesn't exist
+    if ! id bayanat-daemon >/dev/null 2>&1; then
+        useradd --system --home-dir /var/lib/bayanat-daemon --create-home --shell /bin/bash bayanat-daemon
+        log "Created bayanat-daemon user"
+    fi
+    
+    # Create daemon directories
+    mkdir -p /var/lib/bayanat-daemon
+    chown bayanat-daemon:bayanat-daemon /var/lib/bayanat-daemon
+    chmod 755 /var/lib/bayanat-daemon
+    
+    # Setup daemon permissions
+    setup_daemon_permissions
+    
+    # Create API
+    create_api
+    
+    success "🎉 Bayanat companion installed!"
+    echo ""
+    echo "🔧 API Management:"
+    echo "  • HTTP API: http://localhost:8080"
+    echo "  • Status: systemctl status bayanat-api.socket"
+    echo "  • Logs: tail -f /var/log/bayanat/api.log"
+    echo ""
+    echo "📋 API Endpoints:"
+    echo "  • POST /restart-service - Restart services"
+    echo "  • POST /service-status - Check service status"
+    echo "  • POST /update-bayanat - Update and restart"
+    echo "  • GET /health - Health check"
+}
+
+# Full installation (original main function)
 main() {
     local DOMAIN=${1:-"127.0.0.1"}
     
@@ -496,6 +569,9 @@ get_server_ip() {
     echo "$ip"
 }
 
+# Parse command line arguments
+parse_args "$@"
+
 # Get domain - preserve any existing DOMAIN environment variable
 if [ -z "${DOMAIN:-}" ]; then
     DOMAIN=$(get_server_ip)
@@ -504,4 +580,12 @@ else
     log "Using specified domain: $DOMAIN"
 fi
 
-main "$DOMAIN"
+# Execute based on install mode
+case "$INSTALL_MODE" in
+    "full")
+        main "$DOMAIN" ;;
+    "companion")
+        companion_install "$DOMAIN" ;;
+    *)
+        error "Unknown install mode: $INSTALL_MODE" ;;
+esac
