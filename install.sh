@@ -395,7 +395,7 @@ EOF
 Description=Bayanat HTTP API Socket
 
 [Socket]
-ListenStream=8080
+ListenStream=127.0.0.1:8080
 Accept=yes
 
 [Install]
