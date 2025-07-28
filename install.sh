@@ -347,8 +347,17 @@ update_bayanat() {
     
     # Step 2: Pull new code
     log "Pulling updates from git"
-    if ! sudo -u bayanat /usr/bin/git -C /opt/bayanat pull; then
+    git_output=$(sudo -u bayanat /usr/bin/git -C /opt/bayanat pull 2>&1)
+    git_status=$?
+    if [ $git_status -ne 0 ]; then
         respond_error "Git pull failed"
+        return
+    fi
+
+    # Check if already up to date
+    if echo "$git_output" | grep -q "Already up to date"; then
+        log "Repository already up to date"
+        respond_success "System already up to date"
         return
     fi
     
