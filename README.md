@@ -21,8 +21,7 @@ A comprehensive deployment solution for Bayanat, the open-source human rights da
 curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/master/install.sh | bash
 
 # Production installation with custom domain
-export DOMAIN=your-domain.org
-curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/master/install.sh | bash
+DOMAIN=your-domain.org curl -fsSL https://raw.githubusercontent.com/sjacorg/bayanat-cli/master/install.sh | bash
 ```
 
 ### Add Update Companion (Existing Installations)
